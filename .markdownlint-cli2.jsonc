@@ -1,0 +1,18 @@
+// markdownlint-cli2 config — relaxes the rules that don't fit our docs style.
+// Spec/README/CLAUDE.md use long lines and prose tables that the default
+// 80-col MD013 chokes on; the rest of the rules stay strict.
+{
+  "config": {
+    "MD013": false,
+    "MD040": false,
+    "MD024": { "siblings_only": true },
+    "MD060": false
+  },
+  "globs": ["**/*.md"],
+  "ignores": [
+    "node_modules/**",
+    ".next/**",
+    "generated/**",
+    "prisma/migrations/**"
+  ]
+}

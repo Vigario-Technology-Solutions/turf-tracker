@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+.next/
+out/
+build/
+dist/
+
+# Generated files
+src/generated/
+generated/
+next-env.d.ts
+pnpm-lock.yaml
+package-lock.json
+
+# Markdown is handled by markdownlint-cli2
+*.md
+
+# Data
+data/
+*.db
+*.db-journal

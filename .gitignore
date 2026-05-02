@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+
+# Runtime data
+data/
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Next.js
+.next/
+out/
+
+# Build
+dist/
+build/
+bin/
+
+# IDE
+.vscode/
+.idea/
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+
+# OS
+.DS_Store
+Thumbs.db
+nul
+
+# Logs
+*.log
+npm-debug.log*
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Generated Prisma client
+generated/
+
+# Serwist generated service worker
+public/sw*
+public/swe-worker*
+.eslintcache
+prod/
+temp/
