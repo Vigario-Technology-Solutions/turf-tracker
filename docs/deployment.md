@@ -43,7 +43,7 @@ This document only captures **turf-tracker's specific MANIFEST values and the di
 ## Diffs from vis-daily-tracker
 
 | Field | vis-daily-tracker | turf-tracker | Reason |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `requiredEnv` | includes `STORAGE_PATH` | omits `STORAGE_PATH` | Phase 0 has no photo uploads. Add when photo-attach lands in Phase 4. |
 | `optionalEnv` | `GOOGLE_MAPS_API_KEY`, `NEXT_PUBLIC_GOOGLE_MAPS_KEY` | `CIMIS_API_KEY` | Different external integrations. CIMIS for Phase 4 ET₀ auto-fetch. |
 | `cli` | declares `bin/dailies.js` + subcommands | absent | No operator CLI shipped initially. Revisit when we have non-web admin tasks (e.g. soil test PDF import). |

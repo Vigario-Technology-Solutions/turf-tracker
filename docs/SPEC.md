@@ -83,7 +83,7 @@ These are the *current user's* constraints. The data model is generic — when a
 Standard Better-Auth user shape. Extended with:
 
 | Column | Type | Notes |
-|---|---|---|
+| --- | --- | --- |
 | `display_name` | string | |
 | `default_property_id` | FK nullable | What the app opens to |
 | `unit_system` | enum | `imperial` (default) / `metric` |
@@ -94,7 +94,7 @@ Standard Better-Auth user shape. Extended with:
 A grouping of areas under one address — useful for organizing the 3-house operation.
 
 | Column | Type | Notes |
-|---|---|---|
+| --- | --- | --- |
 | `id` | cuid | |
 | `name` | string | "Home", "Dad's house", "Rental" |
 | `address` | string | Optional |
@@ -106,7 +106,7 @@ A grouping of areas under one address — useful for organizing the 3-house oper
 Multi-user permissions per property (granular per-area can come later).
 
 | Column | Type | Notes |
-|---|---|---|
+| --- | --- | --- |
 | `property_id` | FK | |
 | `user_id` | FK | |
 | `role` | enum | `owner` / `contributor` / `viewer` |
@@ -116,7 +116,7 @@ Multi-user permissions per property (granular per-area can come later).
 **The universal primitive.** Lawn zone, vegetable bed, rose bed, individual tree — same shape.
 
 | Column | Type | Notes |
-|---|---|---|
+| --- | --- | --- |
 | `id` | cuid | |
 | `property_id` | FK | |
 | `name` | string | "Backyard", "Tomato bed 2", "Front orange tree" |
@@ -131,14 +131,14 @@ Multi-user permissions per property (granular per-area can come later).
 Optional sprinkler-specific fields if `area_type = turf`:
 
 | Column | Type | Notes |
-|---|---|---|
+| --- | --- | --- |
 | `precip_rate_in_per_hr` | float | Catch-cup measured or spec |
 | `head_type` | enum | `rotor` / `spray` / `MP` / `drip` |
 
 ### 5.5 `soil_tests`
 
 | Column | Type | Notes |
-|---|---|---|
+| --- | --- | --- |
 | `id` | cuid | |
 | `area_id` | FK | A test belongs to an area, not a property — areas can have different soil |
 | `test_date` | date | |
@@ -158,7 +158,7 @@ Derived (computed in app, not stored):
 ### 5.6 `products`
 
 | Column | Type | Notes |
-|---|---|---|
+| --- | --- | --- |
 | `id` | cuid | |
 | `created_by` | FK users | Each user maintains their own library; can be marked `shared_within_household` |
 | `brand`, `name` | string | |
@@ -186,7 +186,7 @@ Initial seed for current user (optional pre-population helper):
 ### 5.7 `applications`
 
 | Column | Type | Notes |
-|---|---|---|
+| --- | --- | --- |
 | `id` | cuid | |
 | `area_id` | FK | |
 | `product_id` | FK | |
@@ -206,7 +206,7 @@ Initial seed for current user (optional pre-population helper):
 ### 5.8 `irrigation_events`
 
 | Column | Type | Notes |
-|---|---|---|
+| --- | --- | --- |
 | `id` | cuid | |
 | `area_id` | FK | |
 | `event_at` | datetime | |
@@ -346,7 +346,7 @@ If the spray volume per 1k sq ft is below the manufacturer's minimum (often 1 ga
 Per area, evaluate every rule on each app open / every 6h. Each rule produces 0 or 1 `recommendations` row.
 
 | Rule ID | Condition | Output |
-|---|---|---|
+| --- | --- | --- |
 | `leaching_due` | days_since_last_leaching_cycle ≥ 30 | "Run a leaching cycle (1.5–2× normal volume) — last was {date}" |
 | `nutrient_below_target` | for each {N,K,Ca,Mg,S,Mn,Zn}: ytd_delivered_lb_per_1k < (season_target × elapsed_fraction) − tolerance | "Apply ~X lb of {best $/lb product} to catch up on {nutrient}" |
 | `gypsum_maintenance_due` | days_since_last_gypsum ≥ 180 (defensive cadence) | "Defensive gypsum maintenance pass due — ~25 lb/1k" |
@@ -364,7 +364,7 @@ Rules can be added without schema changes — they're code, not data.
 Block-level warnings displayed before "Confirm + Log":
 
 | Condition | Severity | Message |
-|---|---|---|
+| --- | --- | --- |
 | `product.tags includes contains_p` AND area.soil_test.p_ppm > optimal_max | 🚫 hard | "Product contains P — soil P already {x}× optimal" |
 | `product.tags includes contains_b` AND area.soil_test.b_ppm > optimal_max | 🚫 hard | "Product contains B — soil B already high" |
 | `product.tags includes contains_na` | ⚠ soft | "Product contains Na — adds to salt load" |
@@ -483,8 +483,8 @@ Three taps from app open to confirmed log. Math + warnings done. This is the val
 ### 8.1 Stack
 
 | Layer | Choice | Reasoning |
-|---|---|---|
-| Framework | **Next.js 15 (App Router)** | Single repo, server actions for mutations, RSC for read-heavy dashboard, route handlers for any external API |
+| --- | --- | --- |
+| Framework | **Next.js 16 (App Router)** | Single repo, server actions for mutations, RSC for read-heavy dashboard, route handlers for any external API |
 | ORM | **Prisma** | Confirmed user preference, plays well with Next.js + Postgres |
 | Database | **Postgres** | Already running locally for vis-daily-tracker |
 | Auth | **Better-Auth** | Modern, replaces aging next-auth. Supports email/password, magic links, sessions, multi-user out of the box |
@@ -667,7 +667,7 @@ turf-tracker/
 ## 10. Decisions (from v1 open questions)
 
 | # | Question | Decision |
-|---|---|---|
+| --- | --- | --- |
 | 1 | Cloud preference | **Web app, not Sheets**. Next.js + Postgres self-hosted initially. |
 | 2 | Properties scope | **All 3 from day 1**, plus generic enough to add more later. |
 | 3 | Sprinkler precip rates | Optional per area; calculator works without them by accepting raw inches input. Catch-cup tests can be added later. |
@@ -682,8 +682,8 @@ turf-tracker/
 New decisions from this round:
 
 | # | Question | Decision |
-|---|---|---|
-| 11 | Stack | Next.js 15 + Prisma + Better-Auth + Serwist + Tailwind + shadcn/ui |
+| --- | --- | --- |
+| 11 | Stack | Next.js 16 + Prisma + Better-Auth + Serwist + Tailwind + shadcn/ui |
 | 12 | Deployment | Localhost + Tailscale initially; VPS later if needed |
 | 13 | Auth | Better-Auth email/password + magic link, multi-user from day 1 |
 | 14 | Areas as primitive | Single `areas` table covers turf zones, beds, trees |
