@@ -73,19 +73,104 @@ model ApplicationUnit {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Auth — managed by Better-Auth (better-auth/adapters/prisma).
+// Field names + types match the framework's expected shape; deviating
+// breaks the adapter. Domain-specific extensions go in `additionalFields`
+// in src/lib/auth/server.ts AND mirrored as columns here.
+// ─────────────────────────────────────────────────────────────────────
+
+model User {
+  id              String   @id @default(cuid())
+  email           String   @unique
+  emailVerified   Boolean  @default(false)
+  name            String   @default("")
+  image           String?
+  // Domain extensions (see SPEC §5.1)
+  displayName       String?
+  defaultPropertyId String?
+  unitSystem        String  @default("imperial") // "imperial" | "metric"
+  currency          String  @default("USD")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  sessions         Session[]
+  accounts         Account[]
+  defaultProperty  Property?         @relation("UserDefaultProperty", fields: [defaultPropertyId], references: [id])
+  createdProperties Property[]       @relation("PropertyCreatedBy")
+  propertyMemberships PropertyMember[]
+  createdProducts  Product[]
+  applications     Application[]
+  irrigationEvents IrrigationEvent[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  userId                String
+  accountId             String
+  providerId            String
+  // Credential auth: providerId = "credential", password = argon2id hash.
+  // External providers populate the OAuth fields instead.
+  password              String?
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([providerId, accountId])
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Domain tables
 // ─────────────────────────────────────────────────────────────────────
 
 model Property {
-  id        String   @id @default(cuid())
-  name      String
-  address   String?
-  notes     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String   @id @default(cuid())
+  name            String
+  address         String?
+  notes           String?
+  createdByUserId String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  areas   Area[]
-  members PropertyMember[]
+  createdBy User             @relation("PropertyCreatedBy", fields: [createdByUserId], references: [id])
+  defaultFor User[]          @relation("UserDefaultProperty")
+  areas     Area[]
+  members   PropertyMember[]
+
+  @@index([createdByUserId])
 }
 
 model PropertyMember {
@@ -95,8 +180,10 @@ model PropertyMember {
   createdAt  DateTime @default(now())
 
   property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([propertyId, userId])
+  @@index([userId])
 }
 
 model Area {
@@ -191,6 +278,7 @@ model Product {
   updatedAt       DateTime @updatedAt
 
   form         ProductForm   @relation(fields: [formId], references: [id])
+  createdBy    User          @relation(fields: [createdByUserId], references: [id])
   applications Application[]
 
   @@index([createdByUserId])
@@ -226,10 +314,12 @@ model Application {
   notes                    String?
   createdAt                DateTime @default(now())
 
-  area    Area    @relation(fields: [areaId], references: [id], onDelete: Cascade)
-  product Product @relation(fields: [productId], references: [id])
+  area      Area    @relation(fields: [areaId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id])
+  appliedBy User    @relation(fields: [appliedByUserId], references: [id])
 
   @@index([areaId, appliedAt])
+  @@index([appliedByUserId])
 }
 
 model IrrigationEvent {
@@ -245,9 +335,11 @@ model IrrigationEvent {
   notes              String?
   createdAt          DateTime @default(now())
 
-  area Area @relation(fields: [areaId], references: [id], onDelete: Cascade)
+  area       Area @relation(fields: [areaId], references: [id], onDelete: Cascade)
+  recordedBy User @relation(fields: [recordedByUserId], references: [id])
 
   @@index([areaId, eventAt])
+  @@index([recordedByUserId])
 }
 
 // ─────────────────────────────────────────────────────────────────────
