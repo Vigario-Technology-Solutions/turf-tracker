@@ -68,15 +68,15 @@ export function SoilTestForm({
           min={0}
           onChangeValue={(v) => updateCation("cecMeq100g", v)}
         />
-        <Field name="nPpm" label="N (ppm)" type="number" step="0.1" min={0} />
-        <Field name="pPpm" label="P (ppm)" type="number" step="0.1" min={0} />
-        <Field name="kPpm" label="K (ppm)" type="number" step="0.1" min={0} />
-        <Field name="sPpm" label="S (ppm)" type="number" step="0.1" min={0} />
+        <Field name="nPpm" label="N (ppm)" type="number" step="0.01" min={0} />
+        <Field name="pPpm" label="P (ppm)" type="number" step="0.01" min={0} />
+        <Field name="kPpm" label="K (ppm)" type="number" step="0.01" min={0} />
+        <Field name="sPpm" label="S (ppm)" type="number" step="0.01" min={0} />
         <Field
           name="caPpm"
           label="Ca (ppm)"
           type="number"
-          step="0.1"
+          step="0.01"
           min={0}
           onChangeValue={(v) => updateCation("caPpm", v)}
         />
@@ -84,7 +84,7 @@ export function SoilTestForm({
           name="mgPpm"
           label="Mg (ppm)"
           type="number"
-          step="0.1"
+          step="0.01"
           min={0}
           onChangeValue={(v) => updateCation("mgPpm", v)}
         />
@@ -92,7 +92,7 @@ export function SoilTestForm({
           name="naPpm"
           label="Na (ppm)"
           type="number"
-          step="0.1"
+          step="0.01"
           min={0}
           onChangeValue={(v) => updateCation("naPpm", v)}
         />
