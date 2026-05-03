@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import prisma from "@/lib/db";
 import { requireSessionUser } from "@/lib/auth/server-session";
 import { getPropertyRole } from "@/lib/auth/guards";
-import { ROLE_OWNER } from "@/lib/constants";
+import { ROLE_OWNER, ROLE_CONTRIBUTOR } from "@/lib/constants";
 import { DeletePropertyButton } from "./delete-button";
 
 interface Props {
@@ -57,14 +57,26 @@ export default async function PropertyDetailPage({ params }: Props) {
       )}
 
       <section>
-        <h2 className="text-sm font-medium text-neutral-500">Areas ({property.areas.length})</h2>
+        <div className="mb-1 flex items-center justify-between">
+          <h2 className="text-sm font-medium text-neutral-500">Areas ({property.areas.length})</h2>
+          {(role === ROLE_OWNER || role === ROLE_CONTRIBUTOR) && (
+            <Link href={`/properties/${id}/areas/new`} className="text-sm font-medium underline">
+              Add area
+            </Link>
+          )}
+        </div>
         {property.areas.length === 0 ? (
-          <p className="mt-1 text-sm text-neutral-600">No areas yet.</p>
+          <p className="text-sm text-neutral-600">No areas yet.</p>
         ) : (
-          <ul className="mt-1 divide-y divide-neutral-200 rounded border border-neutral-200">
+          <ul className="divide-y divide-neutral-200 rounded border border-neutral-200">
             {property.areas.map((a) => (
               <li key={a.id} className="flex justify-between px-3 py-2 text-sm">
-                <span>{a.name}</span>
+                <Link
+                  href={`/properties/${id}/areas/${a.id}`}
+                  className="font-medium hover:underline"
+                >
+                  {a.name}
+                </Link>
                 <span className="text-neutral-500">{a.areaSqFt.toLocaleString()} sq ft</span>
               </li>
             ))}
