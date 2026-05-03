@@ -1,3 +1,4 @@
+import "server-only";
 import { hash as argonHash, verify as argonVerify } from "@node-rs/argon2";
 
 /**
@@ -8,6 +9,10 @@ import { hash as argonHash, verify as argonVerify } from "@node-rs/argon2";
  *
  * Pattern inherited from vis-daily-tracker. AUTH_PASSWORD_PEPPER is
  * validated at startup by src/lib/runtime-config.ts.
+ *
+ * Set-time policy lives in ./password-policy.ts (no native deps) so
+ * client components can validate before submit without dragging
+ * @node-rs/argon2 into the browser bundle.
  */
 
 const PEPPER = Buffer.from(process.env.AUTH_PASSWORD_PEPPER ?? "", "utf8");
@@ -19,39 +24,6 @@ function pepperOrThrow(): Buffer {
     );
   }
   return PEPPER;
-}
-
-export interface PasswordValidationResult {
-  valid: boolean;
-  error?: string;
-}
-
-/**
- * Set-time policy check. Never called on login — re-validating stored
- * passwords on every login would lock users out when the policy tightens.
- *
- * Policy: 12+ chars with upper, lower, digit, special.
- */
-export function validatePassword(password: string): PasswordValidationResult {
-  if (password.length < 12) {
-    return { valid: false, error: "Password must be at least 12 characters" };
-  }
-  if (!/[A-Z]/.test(password)) {
-    return { valid: false, error: "Password must contain at least one uppercase letter" };
-  }
-  if (!/[a-z]/.test(password)) {
-    return { valid: false, error: "Password must contain at least one lowercase letter" };
-  }
-  if (!/[0-9]/.test(password)) {
-    return { valid: false, error: "Password must contain at least one number" };
-  }
-  if (!/[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(password)) {
-    return {
-      valid: false,
-      error: "Password must contain at least one special character (!@#$%^&* etc.)",
-    };
-  }
-  return { valid: true };
 }
 
 export async function hashPassword(password: string): Promise<string> {

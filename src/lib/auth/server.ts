@@ -22,7 +22,24 @@ import { hashPassword, verifyPassword } from "./password";
  * currency) are declared in `additionalFields` AND mirrored as schema
  * columns. Either side without the other breaks the adapter.
  */
+/**
+ * Trusted origins for Better-Auth's CSRF check. Any request whose
+ * Origin header isn't on this list to a state-changing auth endpoint
+ * gets rejected with INVALID_ORIGIN. In dev we allow any localhost port
+ * so port-bumping (3000 → 3001 → 3010 …) doesn't break sign-out; in
+ * prod the BETTER_AUTH_URL value is the only allowed origin.
+ */
+const trustedOrigins = (() => {
+  const baseUrl = process.env.BETTER_AUTH_URL;
+  const origins = baseUrl ? [baseUrl] : [];
+  if (process.env.NODE_ENV !== "production") {
+    origins.push("http://localhost:*", "http://127.0.0.1:*");
+  }
+  return origins;
+})();
+
 export const auth = betterAuth({
+  trustedOrigins,
   database: prismaAdapter(prisma, {
     provider: "postgresql",
     transaction: true,
