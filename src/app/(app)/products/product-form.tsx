@@ -55,8 +55,8 @@ interface DefaultValues {
   pkgCostUsd?: number;
 
   mfgRateValue?: number | null;
-  mfgRateUnit?: string | null;
-  mfgRatePer?: string | null;
+  mfgRateUnitId?: number | null;
+  mfgRateBasisId?: number | null;
 
   tags?: string[];
   sharedInHousehold?: boolean;
@@ -69,11 +69,15 @@ export function ProductForm({
   defaultValues,
   submitLabel,
   productForms,
+  applicationUnits,
+  mfgRateBases,
 }: {
   action: (form: FormData) => Promise<ActionResult<unknown>>;
   defaultValues?: DefaultValues;
   submitLabel: string;
   productForms: LookupRow[];
+  applicationUnits: LookupRow[];
+  mfgRateBases: LookupRow[];
 }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -281,17 +285,19 @@ export function ProductForm({
           min={0}
           defaultValue={fmt(defaultValues?.mfgRateValue ?? undefined)}
         />
-        <Field
-          name="mfgRateUnit"
+        <Select
+          name="mfgRateUnitId"
           label="Rate unit"
-          defaultValue={defaultValues?.mfgRateUnit ?? ""}
-          placeholder="lb, fl_oz, …"
+          defaultValue={defaultValues?.mfgRateUnitId?.toString() ?? ""}
+          options={applicationUnits}
+          allowEmpty
         />
-        <Field
-          name="mfgRatePer"
+        <Select
+          name="mfgRateBasisId"
           label="Per"
-          defaultValue={defaultValues?.mfgRatePer ?? ""}
-          placeholder="1000_sqft, acre, gal_carrier"
+          defaultValue={defaultValues?.mfgRateBasisId?.toString() ?? ""}
+          options={mfgRateBases}
+          allowEmpty
         />
       </Section>
 
@@ -430,12 +436,15 @@ function Select({
   defaultValue,
   options,
   required,
+  allowEmpty,
 }: {
   name: string;
   label: string;
   defaultValue?: string;
   options: LookupRow[];
   required?: boolean;
+  /** When true, the empty option stays selectable (renders "—") for optional fields. */
+  allowEmpty?: boolean;
 }) {
   return (
     <label className="block">
@@ -446,8 +455,8 @@ function Select({
         required={required}
         className="w-full rounded border border-neutral-300 bg-white px-2 py-2 text-sm focus:border-neutral-900 focus:outline-none"
       >
-        <option value="" disabled>
-          Choose…
+        <option value="" disabled={!allowEmpty}>
+          {allowEmpty ? "—" : "Choose…"}
         </option>
         {options.map((o) => (
           <option key={o.id} value={o.id}>

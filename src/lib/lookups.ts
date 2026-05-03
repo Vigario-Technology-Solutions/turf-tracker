@@ -54,6 +54,7 @@ export interface Lookups {
   irrigationSource: LookupMap;
   productForm: LookupMap;
   applicationUnit: LookupMap;
+  mfgRateBasis: LookupMap;
 }
 
 const lookupSelect = {
@@ -71,6 +72,7 @@ export interface SerializedLookups {
   irrigationSource: LookupRow[];
   productForm: LookupRow[];
   applicationUnit: LookupRow[];
+  mfgRateBasis: LookupRow[];
 }
 
 /**
@@ -81,13 +83,15 @@ export interface SerializedLookups {
  * Build the wrappers per-call from the cached rows instead.
  */
 async function loadLookupRows(): Promise<SerializedLookups> {
-  const [areaType, irrigationSource, productForm, applicationUnit] = await Promise.all([
-    prisma.areaType.findMany({ select: lookupSelect, orderBy: lookupOrderBy }),
-    prisma.irrigationSource.findMany({ select: lookupSelect, orderBy: lookupOrderBy }),
-    prisma.productForm.findMany({ select: lookupSelect, orderBy: lookupOrderBy }),
-    prisma.applicationUnit.findMany({ select: lookupSelect, orderBy: lookupOrderBy }),
-  ]);
-  return { areaType, irrigationSource, productForm, applicationUnit };
+  const [areaType, irrigationSource, productForm, applicationUnit, mfgRateBasis] =
+    await Promise.all([
+      prisma.areaType.findMany({ select: lookupSelect, orderBy: lookupOrderBy }),
+      prisma.irrigationSource.findMany({ select: lookupSelect, orderBy: lookupOrderBy }),
+      prisma.productForm.findMany({ select: lookupSelect, orderBy: lookupOrderBy }),
+      prisma.applicationUnit.findMany({ select: lookupSelect, orderBy: lookupOrderBy }),
+      prisma.mfgRateBasis.findMany({ select: lookupSelect, orderBy: lookupOrderBy }),
+    ]);
+  return { areaType, irrigationSource, productForm, applicationUnit, mfgRateBasis };
 }
 
 /** Plain-array shape — cached, suitable for passing as props to client components. */
@@ -104,5 +108,6 @@ export async function getLookups(): Promise<Lookups> {
     irrigationSource: buildLookup(rows.irrigationSource),
     productForm: buildLookup(rows.productForm),
     applicationUnit: buildLookup(rows.applicationUnit),
+    mfgRateBasis: buildLookup(rows.mfgRateBasis),
   };
 }

@@ -70,6 +70,18 @@ model ApplicationUnit {
   name      String
   sortOrder Int     @default(0)
   active    Boolean @default(true)
+
+  productMfgRates Product[] @relation("ProductMfgRateUnit")
+}
+
+model MfgRateBasis {
+  id        Int     @id @default(autoincrement())
+  code      String  @unique
+  name      String
+  sortOrder Int     @default(0)
+  active    Boolean @default(true)
+
+  products Product[]
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -273,18 +285,20 @@ model Product {
   pkgSizeValue    Float
   pkgSizeUnit     String // "lb" | "oz_wt" | "gal" | "fl_oz"
   pkgCostUsd      Float
-  // Manufacturer rate
+  // Manufacturer rate (FK lookups — never free-form)
   mfgRateValue    Float?
-  mfgRateUnit     String?
-  mfgRatePer      String? // "1000_sqft" | "acre" | "gal_carrier"
+  mfgRateUnitId   Int?
+  mfgRateBasisId  Int?
   tags            String[] // contains_p, contains_b, contains_na, acidifying, pgr, etc.
   sharedInHousehold Boolean @default(false)
   notes           String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  form         ProductForm   @relation(fields: [formId], references: [id])
-  createdBy    User          @relation(fields: [createdByUserId], references: [id])
+  form         ProductForm      @relation(fields: [formId], references: [id])
+  createdBy    User             @relation(fields: [createdByUserId], references: [id])
+  mfgRateUnit  ApplicationUnit? @relation("ProductMfgRateUnit", fields: [mfgRateUnitId], references: [id])
+  mfgRateBasis MfgRateBasis?    @relation(fields: [mfgRateBasisId], references: [id])
   applications Application[]
 
   @@index([createdByUserId])

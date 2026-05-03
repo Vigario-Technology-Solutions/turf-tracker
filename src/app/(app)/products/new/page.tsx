@@ -23,6 +23,8 @@ export default async function NewProductPage() {
         action={createProduct}
         submitLabel="Create product"
         productForms={lookups.productForm}
+        applicationUnits={lookups.applicationUnit}
+        mfgRateBases={lookups.mfgRateBasis}
       />
       <Link href="/products" className="text-sm text-neutral-600 underline">
         Cancel

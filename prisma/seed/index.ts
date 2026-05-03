@@ -58,6 +58,12 @@ const APPLICATION_UNITS = [
   { code: "gal", name: "Gallons", sortOrder: 40 },
 ];
 
+const MFG_RATE_BASES = [
+  { code: "1000_sqft", name: "per 1,000 sq ft", sortOrder: 10 },
+  { code: "acre", name: "per acre", sortOrder: 20 },
+  { code: "gal_carrier", name: "per gallon of carrier", sortOrder: 30 },
+];
+
 async function main() {
   for (const row of AREA_TYPES) {
     await prisma.areaType.upsert({ where: { code: row.code }, create: row, update: row });
@@ -70,6 +76,9 @@ async function main() {
   }
   for (const row of APPLICATION_UNITS) {
     await prisma.applicationUnit.upsert({ where: { code: row.code }, create: row, update: row });
+  }
+  for (const row of MFG_RATE_BASES) {
+    await prisma.mfgRateBasis.upsert({ where: { code: row.code }, create: row, update: row });
   }
 
   console.log("✓ Seed complete");

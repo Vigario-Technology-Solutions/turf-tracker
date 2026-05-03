@@ -29,6 +29,8 @@ export default async function EditProductPage({ params }: Props) {
         defaultValues={product}
         submitLabel="Save changes"
         productForms={lookups.productForm}
+        applicationUnits={lookups.applicationUnit}
+        mfgRateBases={lookups.mfgRateBasis}
       />
       <Link href={`/products/${id}`} className="text-sm text-neutral-600 underline">
         Cancel

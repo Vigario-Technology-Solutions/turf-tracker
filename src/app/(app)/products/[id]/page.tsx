@@ -89,7 +89,8 @@ export default async function ProductDetailPage({ params }: Props) {
           <span className="text-xs uppercase tracking-wide text-neutral-500">
             Manufacturer rate
           </span>{" "}
-          {product.mfgRateValue} {product.mfgRateUnit ?? ""} per {product.mfgRatePer ?? ""}
+          {product.mfgRateValue} {lookups.applicationUnit.displayName(product.mfgRateUnitId)}{" "}
+          {lookups.mfgRateBasis.displayName(product.mfgRateBasisId)}
         </section>
       )}
 

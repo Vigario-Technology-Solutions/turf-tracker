@@ -22,11 +22,11 @@ const optionalNumber = z
   .transform((v) => (v.length === 0 ? null : Number(v)))
   .pipe(z.number().nonnegative("Must be ≥ 0").nullable());
 
-const optionalString = z
+const optionalLookupId = z
   .string()
   .trim()
-  .max(120)
-  .transform((v) => (v.length === 0 ? null : v));
+  .transform((v) => (v.length === 0 ? null : Number(v)))
+  .pipe(z.number().int().positive().nullable());
 
 const productInput = z.object({
   brand: z.string().trim().min(1, "Brand is required").max(120),
@@ -53,8 +53,8 @@ const productInput = z.object({
   pkgCostUsd: z.coerce.number().nonnegative(),
 
   mfgRateValue: optionalNumber,
-  mfgRateUnit: optionalString,
-  mfgRatePer: optionalString,
+  mfgRateUnitId: optionalLookupId,
+  mfgRateBasisId: optionalLookupId,
 
   // Tags ship as a string array on the model. We collect them as
   // repeated `tags` form fields plus a free-text "custom" entry that
@@ -110,8 +110,8 @@ function readForm(form: FormData) {
     pkgCostUsd: get("pkgCostUsd") || "0",
 
     mfgRateValue: get("mfgRateValue"),
-    mfgRateUnit: get("mfgRateUnit"),
-    mfgRatePer: get("mfgRatePer"),
+    mfgRateUnitId: get("mfgRateUnitId"),
+    mfgRateBasisId: get("mfgRateBasisId"),
 
     tags: Array.from(tagSet),
     sharedInHousehold: form.get("sharedInHousehold") === "on",
