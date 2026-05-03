@@ -34,6 +34,7 @@ export default async function NewAreaPage({ params }: Props) {
         submitLabel="Create area"
         areaTypes={lookups.areaType}
         irrigationSources={lookups.irrigationSource}
+        irrigationHeadTypes={lookups.irrigationHeadType}
       />
       <Link href={`/properties/${propertyId}`} className="text-sm text-neutral-600 underline">
         Cancel

@@ -89,7 +89,10 @@ export default async function AreaDetailPage({ params }: Props) {
         />
         <Stat label="Water Na (ppm)" value={area.waterNaPpm?.toString() ?? "—"} />
         <Stat label="Precip rate (in/hr)" value={area.precipRateInPerHr?.toString() ?? "—"} />
-        <Stat label="Head type" value={area.headType ?? "—"} />
+        <Stat
+          label="Head type"
+          value={lookups.irrigationHeadType.displayName(area.headTypeId) || "—"}
+        />
       </section>
 
       {area.notes && (

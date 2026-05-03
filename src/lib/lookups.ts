@@ -52,6 +52,7 @@ function buildLookup(rows: LookupRow[]): LookupMap {
 export interface Lookups {
   areaType: LookupMap;
   irrigationSource: LookupMap;
+  irrigationHeadType: LookupMap;
   productForm: LookupMap;
   applicationUnit: LookupMap;
   mfgRateBasis: LookupMap;
@@ -70,6 +71,7 @@ const lookupOrderBy = [{ sortOrder: "asc" as const }, { id: "asc" as const }];
 export interface SerializedLookups {
   areaType: LookupRow[];
   irrigationSource: LookupRow[];
+  irrigationHeadType: LookupRow[];
   productForm: LookupRow[];
   applicationUnit: LookupRow[];
   mfgRateBasis: LookupRow[];
@@ -83,15 +85,29 @@ export interface SerializedLookups {
  * Build the wrappers per-call from the cached rows instead.
  */
 async function loadLookupRows(): Promise<SerializedLookups> {
-  const [areaType, irrigationSource, productForm, applicationUnit, mfgRateBasis] =
-    await Promise.all([
-      prisma.areaType.findMany({ select: lookupSelect, orderBy: lookupOrderBy }),
-      prisma.irrigationSource.findMany({ select: lookupSelect, orderBy: lookupOrderBy }),
-      prisma.productForm.findMany({ select: lookupSelect, orderBy: lookupOrderBy }),
-      prisma.applicationUnit.findMany({ select: lookupSelect, orderBy: lookupOrderBy }),
-      prisma.mfgRateBasis.findMany({ select: lookupSelect, orderBy: lookupOrderBy }),
-    ]);
-  return { areaType, irrigationSource, productForm, applicationUnit, mfgRateBasis };
+  const [
+    areaType,
+    irrigationSource,
+    irrigationHeadType,
+    productForm,
+    applicationUnit,
+    mfgRateBasis,
+  ] = await Promise.all([
+    prisma.areaType.findMany({ select: lookupSelect, orderBy: lookupOrderBy }),
+    prisma.irrigationSource.findMany({ select: lookupSelect, orderBy: lookupOrderBy }),
+    prisma.irrigationHeadType.findMany({ select: lookupSelect, orderBy: lookupOrderBy }),
+    prisma.productForm.findMany({ select: lookupSelect, orderBy: lookupOrderBy }),
+    prisma.applicationUnit.findMany({ select: lookupSelect, orderBy: lookupOrderBy }),
+    prisma.mfgRateBasis.findMany({ select: lookupSelect, orderBy: lookupOrderBy }),
+  ]);
+  return {
+    areaType,
+    irrigationSource,
+    irrigationHeadType,
+    productForm,
+    applicationUnit,
+    mfgRateBasis,
+  };
 }
 
 /** Plain-array shape — cached, suitable for passing as props to client components. */
@@ -106,6 +122,7 @@ export async function getLookups(): Promise<Lookups> {
   return {
     areaType: buildLookup(rows.areaType),
     irrigationSource: buildLookup(rows.irrigationSource),
+    irrigationHeadType: buildLookup(rows.irrigationHeadType),
     productForm: buildLookup(rows.productForm),
     applicationUnit: buildLookup(rows.applicationUnit),
     mfgRateBasis: buildLookup(rows.mfgRateBasis),

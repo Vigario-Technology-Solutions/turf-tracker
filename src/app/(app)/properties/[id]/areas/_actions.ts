@@ -42,11 +42,11 @@ const areaInput = z.object({
     .trim()
     .transform((v) => (v.length === 0 ? null : Number(v)))
     .pipe(z.number().nonnegative("Must be ≥ 0").max(50).nullable()),
-  headType: z
+  headTypeId: z
     .string()
     .trim()
-    .max(40)
-    .transform((v) => (v.length === 0 ? null : v)),
+    .transform((v) => (v.length === 0 ? null : Number(v)))
+    .pipe(z.number().int().positive().nullable()),
   notes: z
     .string()
     .trim()
@@ -69,7 +69,7 @@ function readForm(form: FormData) {
     cropOrSpecies: get("cropOrSpecies"),
     waterNaPpm: get("waterNaPpm"),
     precipRateInPerHr: get("precipRateInPerHr"),
-    headType: get("headType"),
+    headTypeId: get("headTypeId"),
     notes: get("notes"),
   });
 }

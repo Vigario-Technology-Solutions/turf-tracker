@@ -15,6 +15,7 @@ export function AreaForm({
   submitLabel,
   areaTypes,
   irrigationSources,
+  irrigationHeadTypes,
 }: {
   action: (form: FormData) => Promise<ActionResult<unknown>>;
   defaultValues?: {
@@ -25,12 +26,13 @@ export function AreaForm({
     cropOrSpecies?: string | null;
     waterNaPpm?: number | null;
     precipRateInPerHr?: number | null;
-    headType?: string | null;
+    headTypeId?: number | null;
     notes?: string | null;
   };
   submitLabel: string;
   areaTypes: LookupRow[];
   irrigationSources: LookupRow[];
+  irrigationHeadTypes: LookupRow[];
 }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -102,11 +104,12 @@ export function AreaForm({
           defaultValue={defaultValues?.precipRateInPerHr?.toString() ?? ""}
           placeholder="optional"
         />
-        <Field
-          name="headType"
+        <Select
+          name="headTypeId"
           label="Head type"
-          defaultValue={defaultValues?.headType ?? ""}
-          placeholder="rotor / spray / MP / drip"
+          defaultValue={defaultValues?.headTypeId?.toString() ?? ""}
+          options={irrigationHeadTypes}
+          allowEmpty
         />
       </div>
 
@@ -170,12 +173,15 @@ function Select({
   defaultValue,
   options,
   required,
+  allowEmpty,
 }: {
   name: string;
   label: string;
   defaultValue?: string;
   options: LookupRow[];
   required?: boolean;
+  /** When true, the empty option stays selectable (renders "—") for optional fields. */
+  allowEmpty?: boolean;
 }) {
   return (
     <label className="block">
@@ -186,8 +192,8 @@ function Select({
         required={required}
         className="w-full rounded border border-neutral-300 bg-white px-2 py-2 text-sm focus:border-neutral-900 focus:outline-none"
       >
-        <option value="" disabled>
-          Choose…
+        <option value="" disabled={!allowEmpty}>
+          {allowEmpty ? "—" : "Choose…"}
         </option>
         {options.map((o) => (
           <option key={o.id} value={o.id}>

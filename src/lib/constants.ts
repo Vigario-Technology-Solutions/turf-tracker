@@ -52,6 +52,15 @@ export const MFG_RATE_BASIS_ACRE = "acre" as const;
 export const MFG_RATE_BASIS_GAL_CARRIER = "gal_carrier" as const;
 
 // ─────────────────────────────────────────────────────────────────────
+// IrrigationHeadType codes
+// ─────────────────────────────────────────────────────────────────────
+export const HEAD_TYPE_ROTOR = "rotor" as const;
+export const HEAD_TYPE_SPRAY = "spray" as const;
+export const HEAD_TYPE_MP_ROTATOR = "mp_rotator" as const;
+export const HEAD_TYPE_DRIP = "drip" as const;
+export const HEAD_TYPE_BUBBLER = "bubbler" as const;
+
+// ─────────────────────────────────────────────────────────────────────
 // Product tag literals (stored in Product.tags string[])
 // ─────────────────────────────────────────────────────────────────────
 export const TAG_CONTAINS_P = "contains_p" as const;

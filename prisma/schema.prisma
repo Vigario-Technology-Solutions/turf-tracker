@@ -86,6 +86,16 @@ model MfgRateBasis {
   products Product[]
 }
 
+model IrrigationHeadType {
+  id        Int     @id @default(autoincrement())
+  code      String  @unique
+  name      String
+  sortOrder Int     @default(0)
+  active    Boolean @default(true)
+
+  areas Area[]
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Auth — managed by Better-Auth (better-auth/adapters/prisma).
 // Field names + types match the framework's expected shape; deviating
@@ -216,15 +226,16 @@ model Area {
   irrigationSourceId   Int
   waterNaPpm           Float?
   precipRateInPerHr    Float?
-  headType             String?
+  headTypeId           Int?
   currentSoilTestId    String?  @unique
   notes                String?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
-  property         Property         @relation(fields: [propertyId], references: [id], onDelete: Cascade)
-  areaType         AreaType         @relation(fields: [areaTypeId], references: [id])
-  irrigationSource IrrigationSource @relation(fields: [irrigationSourceId], references: [id])
+  property         Property            @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  areaType         AreaType            @relation(fields: [areaTypeId], references: [id])
+  irrigationSource IrrigationSource    @relation(fields: [irrigationSourceId], references: [id])
+  headType         IrrigationHeadType? @relation(fields: [headTypeId], references: [id])
 
   soilTests        SoilTest[]
   applications     Application[]

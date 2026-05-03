@@ -36,6 +36,7 @@ export default async function EditAreaPage({ params }: Props) {
         submitLabel="Save changes"
         areaTypes={lookups.areaType}
         irrigationSources={lookups.irrigationSource}
+        irrigationHeadTypes={lookups.irrigationHeadType}
       />
       <Link
         href={`/properties/${propertyId}/areas/${areaId}`}
