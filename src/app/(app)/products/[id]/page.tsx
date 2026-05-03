@@ -35,7 +35,7 @@ export default async function ProductDetailPage({ params }: Props) {
           </h1>
           <p className="mt-1 text-sm text-neutral-600">
             {lookups.productForm.displayName(product.formId)} · {product.pkgSizeValue}{" "}
-            {product.pkgSizeUnit} · ${product.pkgCostUsd.toFixed(2)}
+            {lookups.applicationUnit.code(product.pkgSizeUnitId)} · ${product.pkgCostUsd.toFixed(2)}
           </p>
         </div>
         {owned && (

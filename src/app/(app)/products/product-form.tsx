@@ -23,13 +23,6 @@ const KNOWN_TAGS = [
   { value: TAG_HUMIC, label: "Humic / fulvic" },
 ];
 
-const PKG_UNITS = [
-  { code: "lb", label: "lb (weight)" },
-  { code: "oz_wt", label: "oz (weight)" },
-  { code: "gal", label: "gal (volume)" },
-  { code: "fl_oz", label: "fl oz (volume)" },
-] as const;
-
 interface DefaultValues {
   brand?: string;
   name?: string;
@@ -51,7 +44,7 @@ interface DefaultValues {
   densityLbPerGal?: number | null;
 
   pkgSizeValue?: number;
-  pkgSizeUnit?: string;
+  pkgSizeUnitId?: number;
   pkgCostUsd?: number;
 
   mfgRateValue?: number | null;
@@ -251,21 +244,13 @@ export function ProductForm({
           defaultValue={fmt(defaultValues?.pkgSizeValue)}
           required
         />
-        <label className="block">
-          <span className="mb-1 block text-sm font-medium">Unit</span>
-          <select
-            name="pkgSizeUnit"
-            defaultValue={defaultValues?.pkgSizeUnit ?? "lb"}
-            required
-            className="w-full rounded border border-neutral-300 bg-white px-2 py-2 text-sm focus:border-neutral-900 focus:outline-none"
-          >
-            {PKG_UNITS.map((u) => (
-              <option key={u.code} value={u.code}>
-                {u.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <Select
+          name="pkgSizeUnitId"
+          label="Unit"
+          defaultValue={defaultValues?.pkgSizeUnitId?.toString() ?? ""}
+          options={applicationUnits}
+          required
+        />
         <Field
           name="pkgCostUsd"
           label="Package cost ($)"

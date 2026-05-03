@@ -71,7 +71,9 @@ model ApplicationUnit {
   sortOrder Int     @default(0)
   active    Boolean @default(true)
 
-  productMfgRates Product[] @relation("ProductMfgRateUnit")
+  productPkgSizes      Product[]     @relation("ProductPkgSizeUnit")
+  productMfgRates      Product[]     @relation("ProductMfgRateUnit")
+  applicationAmounts   Application[]
 }
 
 model MfgRateBasis {
@@ -283,7 +285,7 @@ model Product {
   densityLbPerGal Float?
   // Packaging + cost
   pkgSizeValue    Float
-  pkgSizeUnit     String // "lb" | "oz_wt" | "gal" | "fl_oz"
+  pkgSizeUnitId   Int
   pkgCostUsd      Float
   // Manufacturer rate (FK lookups — never free-form)
   mfgRateValue    Float?
@@ -297,6 +299,7 @@ model Product {
 
   form         ProductForm      @relation(fields: [formId], references: [id])
   createdBy    User             @relation(fields: [createdByUserId], references: [id])
+  pkgSizeUnit  ApplicationUnit  @relation("ProductPkgSizeUnit", fields: [pkgSizeUnitId], references: [id])
   mfgRateUnit  ApplicationUnit? @relation("ProductMfgRateUnit", fields: [mfgRateUnitId], references: [id])
   mfgRateBasis MfgRateBasis?    @relation(fields: [mfgRateBasisId], references: [id])
   applications Application[]
@@ -311,7 +314,7 @@ model Application {
   appliedAt                DateTime @default(now())
   appliedByUserId          String
   amountValue              Float
-  amountUnit               String
+  amountUnitId             Int
   carrierWaterGal          Float?
   targetNutrientLbPer1k    Float?
   weatherTempF             Float?
@@ -334,9 +337,10 @@ model Application {
   notes                    String?
   createdAt                DateTime @default(now())
 
-  area      Area    @relation(fields: [areaId], references: [id], onDelete: Cascade)
-  product   Product @relation(fields: [productId], references: [id])
-  appliedBy User    @relation(fields: [appliedByUserId], references: [id])
+  area       Area            @relation(fields: [areaId], references: [id], onDelete: Cascade)
+  product    Product         @relation(fields: [productId], references: [id])
+  appliedBy  User            @relation(fields: [appliedByUserId], references: [id])
+  amountUnit ApplicationUnit @relation(fields: [amountUnitId], references: [id])
 
   @@index([areaId, appliedAt])
   @@index([appliedByUserId])

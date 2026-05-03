@@ -6,7 +6,8 @@ import { z } from "zod";
 import prisma from "@/lib/db";
 import { requireSessionUser } from "@/lib/auth/server-session";
 import { canAccessArea } from "@/lib/auth/guards";
-import { ROLE_CONTRIBUTOR } from "@/lib/constants";
+import { ROLE_CONTRIBUTOR, UNIT_LB, UNIT_FL_OZ } from "@/lib/constants";
+import { getLookups } from "@/lib/lookups";
 import {
   evaluateWarnings,
   hasHardWarning,
@@ -96,12 +97,13 @@ export async function logApplication(
   // Load the area + its current soil test + the product. The area's
   // soil-test FK is the source of truth for warnings — caller can't
   // smuggle a different test through the form.
-  const [area, product] = await Promise.all([
+  const [area, product, lookups] = await Promise.all([
     prisma.area.findFirst({
       where: { id: areaId, propertyId },
       include: { soilTests: { where: { id: { not: undefined } } } },
     }),
     prisma.product.findUnique({ where: { id: input.productId } }),
+    getLookups(),
   ]);
   if (!area) return { ok: false, error: "Area not found." };
   if (!product) return { ok: false, error: "Product not found." };
@@ -122,7 +124,7 @@ export async function logApplication(
   const productLabel: ProductLabel = product;
   let totalProductLb: number;
   let amountValue: number;
-  let amountUnit: "lb" | "fl_oz";
+  let amountUnitId: number;
   let carrierWaterGal: number | null;
   let delivered;
 
@@ -135,7 +137,7 @@ export async function logApplication(
     });
     totalProductLb = plan.totalProductLb;
     amountValue = plan.totalProductLb;
-    amountUnit = "lb";
+    amountUnitId = lookups.applicationUnit.id(UNIT_LB);
     carrierWaterGal = null;
     delivered = plan.delivered;
   } else {
@@ -151,17 +153,17 @@ export async function logApplication(
     });
     totalProductLb = plan.totalProductLb;
     amountValue = plan.totalProductFlOz;
-    amountUnit = "fl_oz";
+    amountUnitId = lookups.applicationUnit.id(UNIT_FL_OZ);
     carrierWaterGal = input.carrierTotalGal;
     delivered = plan.delivered;
   }
 
-  // Cost snapshot: convert the package size to lb regardless of pkgSizeUnit
-  // for the most common cases. For non-weight units we fall back to a
-  // direct $ / unit computation rather than crashing — this is good
-  // enough for v1; a unit-aware ledger lands later.
+  // Cost snapshot: convert the package size to lb regardless of unit
+  // (lb / oz_wt convert directly; gal / fl_oz use density). For
+  // non-weight units without density we fall back to 0 and skip cost
+  // — a unit-aware ledger lands later.
   const pkgSizeLbApprox = approxPkgSizeLb(
-    product.pkgSizeUnit,
+    lookups.applicationUnit.code(product.pkgSizeUnitId),
     product.pkgSizeValue,
     product.densityLbPerGal ?? null,
   );
@@ -174,7 +176,7 @@ export async function logApplication(
       productId: input.productId,
       appliedByUserId: user.id,
       amountValue,
-      amountUnit,
+      amountUnitId,
       carrierWaterGal,
       targetNutrientLbPer1k: input.targetLbPer1k,
       weatherTempF: input.weatherTempF,

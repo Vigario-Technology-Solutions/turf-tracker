@@ -26,7 +26,8 @@ interface ProductShape extends ProductLabel {
   brand: string;
   name: string;
   tags: readonly string[];
-  pkgSizeUnit: string;
+  /** Resolved code (e.g. "lb"), not the FK id — keeps the client free of the lookup table. */
+  pkgSizeUnitCode: string;
   pkgSizeValue: number;
   pkgCostUsd: number;
 }
@@ -131,14 +132,18 @@ export function ApplyCalculator({
   // Approximate cost — same approximation the server uses.
   const cost = useMemo(() => {
     if (!computation?.ok) return null;
-    const lb = approxPkgSizeLb(product.pkgSizeUnit, product.pkgSizeValue, product.densityLbPerGal);
+    const lb = approxPkgSizeLb(
+      product.pkgSizeUnitCode,
+      product.pkgSizeValue,
+      product.densityLbPerGal,
+    );
     if (lb <= 0) return null;
     return (product.pkgCostUsd / lb) * computation.plan.totalProductLb;
   }, [
     computation,
     product.densityLbPerGal,
     product.pkgCostUsd,
-    product.pkgSizeUnit,
+    product.pkgSizeUnitCode,
     product.pkgSizeValue,
   ]);
 

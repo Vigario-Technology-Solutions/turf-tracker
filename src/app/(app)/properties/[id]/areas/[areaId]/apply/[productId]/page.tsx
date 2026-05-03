@@ -103,7 +103,7 @@ export default async function ApplyCalculatorPage({ params }: Props) {
           cuPct: product.cuPct,
           bPct: product.bPct,
           densityLbPerGal: product.densityLbPerGal,
-          pkgSizeUnit: product.pkgSizeUnit,
+          pkgSizeUnitCode: lookups.applicationUnit.code(product.pkgSizeUnitId),
           pkgSizeValue: product.pkgSizeValue,
           pkgCostUsd: product.pkgCostUsd,
         }}

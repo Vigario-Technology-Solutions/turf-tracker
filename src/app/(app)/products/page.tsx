@@ -20,6 +20,7 @@ export default async function ProductsPage() {
         nPct: true,
         p2o5Pct: true,
         k2oPct: true,
+        pkgSizeUnitId: true,
         sharedInHousehold: true,
         tags: true,
       },

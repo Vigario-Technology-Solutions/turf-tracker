@@ -49,7 +49,7 @@ const productInput = z.object({
   densityLbPerGal: optionalNumber,
 
   pkgSizeValue: z.coerce.number().positive("Package size must be > 0"),
-  pkgSizeUnit: z.enum(["lb", "oz_wt", "gal", "fl_oz"]),
+  pkgSizeUnitId: z.coerce.number().int().positive("Package size unit is required"),
   pkgCostUsd: z.coerce.number().nonnegative(),
 
   mfgRateValue: optionalNumber,
@@ -106,7 +106,7 @@ function readForm(form: FormData) {
     densityLbPerGal: get("densityLbPerGal"),
 
     pkgSizeValue: get("pkgSizeValue"),
-    pkgSizeUnit: get("pkgSizeUnit"),
+    pkgSizeUnitId: get("pkgSizeUnitId"),
     pkgCostUsd: get("pkgCostUsd") || "0",
 
     mfgRateValue: get("mfgRateValue"),
