@@ -66,27 +66,6 @@ const lookupSelect = {
 
 const lookupOrderBy = [{ sortOrder: "asc" as const }, { id: "asc" as const }];
 
-async function loadLookups(): Promise<Lookups> {
-  const [areaTypes, irrigationSources, productForms, applicationUnits] = await Promise.all([
-    prisma.areaType.findMany({ select: lookupSelect, orderBy: lookupOrderBy }),
-    prisma.irrigationSource.findMany({ select: lookupSelect, orderBy: lookupOrderBy }),
-    prisma.productForm.findMany({ select: lookupSelect, orderBy: lookupOrderBy }),
-    prisma.applicationUnit.findMany({ select: lookupSelect, orderBy: lookupOrderBy }),
-  ]);
-  return {
-    areaType: buildLookup(areaTypes),
-    irrigationSource: buildLookup(irrigationSources),
-    productForm: buildLookup(productForms),
-    applicationUnit: buildLookup(applicationUnits),
-  };
-}
-
-/** Cached resolver — revalidates every 60s; invalidate via the "lookups" tag. */
-export const getLookups = unstable_cache(loadLookups, ["lookups"], {
-  revalidate: 60,
-  tags: ["lookups"],
-});
-
 export interface SerializedLookups {
   areaType: LookupRow[];
   irrigationSource: LookupRow[];
@@ -94,13 +73,36 @@ export interface SerializedLookups {
   applicationUnit: LookupRow[];
 }
 
-/** Plain-array shape suitable for passing as props to client components. */
-export async function getSerializedLookups(): Promise<SerializedLookups> {
-  const lookups = await getLookups();
+/**
+ * The cache only ever holds plain arrays. `unstable_cache` serializes
+ * its return through structured clone, so caching the `LookupMap`
+ * wrapper directly silently strips its `id` / `code` / `displayName`
+ * closures and consumers blow up on `displayName is not a function`.
+ * Build the wrappers per-call from the cached rows instead.
+ */
+async function loadLookupRows(): Promise<SerializedLookups> {
+  const [areaType, irrigationSource, productForm, applicationUnit] = await Promise.all([
+    prisma.areaType.findMany({ select: lookupSelect, orderBy: lookupOrderBy }),
+    prisma.irrigationSource.findMany({ select: lookupSelect, orderBy: lookupOrderBy }),
+    prisma.productForm.findMany({ select: lookupSelect, orderBy: lookupOrderBy }),
+    prisma.applicationUnit.findMany({ select: lookupSelect, orderBy: lookupOrderBy }),
+  ]);
+  return { areaType, irrigationSource, productForm, applicationUnit };
+}
+
+/** Plain-array shape — cached, suitable for passing as props to client components. */
+export const getSerializedLookups = unstable_cache(loadLookupRows, ["lookups"], {
+  revalidate: 60,
+  tags: ["lookups"],
+});
+
+/** Server-side rich resolver — wraps cached rows in `LookupMap` helpers. */
+export async function getLookups(): Promise<Lookups> {
+  const rows = await getSerializedLookups();
   return {
-    areaType: lookups.areaType.all,
-    irrigationSource: lookups.irrigationSource.all,
-    productForm: lookups.productForm.all,
-    applicationUnit: lookups.applicationUnit.all,
+    areaType: buildLookup(rows.areaType),
+    irrigationSource: buildLookup(rows.irrigationSource),
+    productForm: buildLookup(rows.productForm),
+    applicationUnit: buildLookup(rows.applicationUnit),
   };
 }
