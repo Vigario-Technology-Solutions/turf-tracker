@@ -58,19 +58,27 @@ export default async function AreaDetailPage({ params }: Props) {
               {area.cropOrSpecies && ` · ${area.cropOrSpecies}`}
             </p>
           </div>
-          {canEdit && (
-            <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
+            {canEdit && (
+              <Link
+                href={`/properties/${propertyId}/areas/${areaId}/apply`}
+                className="rounded bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white"
+              >
+                Apply
+              </Link>
+            )}
+            {canEdit && (
               <Link
                 href={`/properties/${propertyId}/areas/${areaId}/edit`}
                 className="rounded border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50"
               >
                 Edit
               </Link>
-              {canDelete && (
-                <DeleteAreaButton propertyId={propertyId} areaId={areaId} name={area.name} />
-              )}
-            </div>
-          )}
+            )}
+            {canDelete && (
+              <DeleteAreaButton propertyId={propertyId} areaId={areaId} name={area.name} />
+            )}
+          </div>
         </div>
       </div>
 
