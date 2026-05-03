@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "Property" ADD COLUMN     "geocodedAt" TIMESTAMP(3),
+ADD COLUMN     "lat" DOUBLE PRECISION,
+ADD COLUMN     "lon" DOUBLE PRECISION;

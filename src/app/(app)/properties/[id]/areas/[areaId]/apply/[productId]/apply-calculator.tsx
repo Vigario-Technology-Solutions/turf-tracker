@@ -10,6 +10,7 @@ import {
   type Nutrient,
   type ProductLabel,
 } from "@/lib/calc";
+import { compassFromDeg, type WeatherSummary } from "@/lib/weather";
 import type { ActionResult } from "../_actions";
 
 const NUTRIENT_OPTIONS: Nutrient[] = ["N", "P", "K", "Ca", "Mg", "S", "Fe", "Mn", "Zn", "Cu", "B"];
@@ -55,12 +56,18 @@ export function ApplyCalculator({
   product,
   soilTest,
   isGranular,
+  weather,
+  weatherDefaults,
+  propertyHasCoords,
 }: {
   action: (form: FormData) => Promise<ActionResult<unknown>>;
   area: AreaShape;
   product: ProductShape;
   soilTest: SoilShape | null;
   isGranular: boolean;
+  weather: WeatherSummary | null;
+  weatherDefaults: { tempF: number | null; notes: string } | null;
+  propertyHasCoords: boolean;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -230,35 +237,20 @@ export function ApplyCalculator({
         </div>
       )}
 
-      <details className="rounded border border-neutral-200 p-3 text-sm">
-        <summary className="cursor-pointer font-medium">Optional: weather + notes</summary>
-        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <label className="block">
-            <span className="mb-1 block text-sm font-medium">Temp (°F)</span>
-            <input
-              name="weatherTempF"
-              type="number"
-              step="0.1"
-              className="w-full rounded border border-neutral-300 px-2 py-2 text-sm focus:border-neutral-900 focus:outline-none"
-            />
-          </label>
-          <label className="block sm:col-span-2">
-            <span className="mb-1 block text-sm font-medium">Weather notes</span>
-            <input
-              name="weatherNotes"
-              className="w-full rounded border border-neutral-300 px-2 py-2 text-sm focus:border-neutral-900 focus:outline-none"
-            />
-          </label>
-          <label className="block sm:col-span-3">
-            <span className="mb-1 block text-sm font-medium">Notes</span>
-            <textarea
-              name="notes"
-              rows={2}
-              className="w-full rounded border border-neutral-300 px-2 py-2 text-sm focus:border-neutral-900 focus:outline-none"
-            />
-          </label>
-        </div>
-      </details>
+      <WeatherPanel
+        weather={weather}
+        weatherDefaults={weatherDefaults}
+        propertyHasCoords={propertyHasCoords}
+      />
+
+      <label className="block">
+        <span className="mb-1 block text-sm font-medium">Notes (optional)</span>
+        <textarea
+          name="notes"
+          rows={2}
+          className="w-full rounded border border-neutral-300 px-2 py-2 text-sm focus:border-neutral-900 focus:outline-none"
+        />
+      </label>
 
       {error && <p className="text-sm text-red-700">{error}</p>}
 
@@ -340,6 +332,118 @@ function ResultPanel({
           Cost: <strong>${cost.toFixed(2)}</strong>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Weather panel: shows the auto-fetched current conditions + today's
+ * forecast outline. The actual posted form values come from `weatherTempF`
+ * + `weatherNotes` inputs (prefilled from the auto-fetch); manual edits
+ * win. When the property has no coordinates, the panel falls back to
+ * the bare manual inputs with a one-line "add address to enable" hint.
+ */
+function WeatherPanel({
+  weather,
+  weatherDefaults,
+  propertyHasCoords,
+}: {
+  weather: WeatherSummary | null;
+  weatherDefaults: { tempF: number | null; notes: string } | null;
+  propertyHasCoords: boolean;
+}) {
+  // Show the observation's wall time rather than "X min ago" — `Date.now()`
+  // in render is flagged impure (and would drift between server + client
+  // hydration anyway). The user sees "observed 14:42 PT" and can judge
+  // freshness against the local clock.
+  const observedLabel = weather?.observedAt
+    ? new Date(weather.observedAt).toLocaleTimeString(undefined, {
+        hour: "numeric",
+        minute: "2-digit",
+        timeZoneName: "short",
+      })
+    : null;
+
+  return (
+    <fieldset className="rounded border border-neutral-200 p-3">
+      <legend className="px-1 text-xs uppercase tracking-wide text-neutral-500">Weather</legend>
+
+      {weather ? (
+        <div className="space-y-2 text-sm">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4">
+            <Stat label="Temp" value={weather.tempF != null ? `${weather.tempF}°F` : "—"} />
+            <Stat
+              label="Humidity"
+              value={weather.humidityPct != null ? `${weather.humidityPct}%` : "—"}
+            />
+            <Stat
+              label="Wind"
+              value={
+                weather.windMph != null
+                  ? `${weather.windMph} mph${compassFromDeg(weather.windDirDeg) ? " " + compassFromDeg(weather.windDirDeg) : ""}`
+                  : "—"
+              }
+            />
+            <Stat label="Conditions" value={weather.conditions ?? "—"} />
+            <Stat
+              label="Today H/L"
+              value={
+                weather.todayHighF != null || weather.todayLowF != null
+                  ? `${weather.todayHighF ?? "—"}° / ${weather.todayLowF ?? "—"}°`
+                  : "—"
+              }
+            />
+            <Stat
+              label="Precip prob (next)"
+              value={weather.precipProbNext6hPct != null ? `${weather.precipProbNext6hPct}%` : "—"}
+            />
+            <Stat
+              label="Dewpoint"
+              value={weather.dewpointF != null ? `${weather.dewpointF}°F` : "—"}
+            />
+            <Stat label="Station" value={weather.stationId ?? "—"} />
+          </div>
+          <div className="text-xs text-neutral-500">
+            via NWS{observedLabel && ` · observed ${observedLabel}`}
+          </div>
+        </div>
+      ) : propertyHasCoords ? (
+        <p className="text-sm text-neutral-600">Couldn&apos;t reach NWS — fill in manually.</p>
+      ) : (
+        <p className="text-sm text-neutral-600">
+          Add an address to this property to enable weather autofill.
+        </p>
+      )}
+
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <label className="block">
+          <span className="mb-1 block text-sm font-medium">Temp at application (°F)</span>
+          <input
+            name="weatherTempF"
+            type="number"
+            step="0.1"
+            defaultValue={weatherDefaults?.tempF != null ? weatherDefaults.tempF.toString() : ""}
+            className="w-full rounded border border-neutral-300 px-2 py-2 text-sm focus:border-neutral-900 focus:outline-none"
+          />
+        </label>
+        <label className="block sm:col-span-2">
+          <span className="mb-1 block text-sm font-medium">Weather notes</span>
+          <input
+            name="weatherNotes"
+            defaultValue={weatherDefaults?.notes ?? ""}
+            className="w-full rounded border border-neutral-300 px-2 py-2 text-sm focus:border-neutral-900 focus:outline-none"
+          />
+        </label>
+      </div>
+    </fieldset>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-xs uppercase tracking-wide text-neutral-500">{label}</div>
+      <div className="mt-0.5">{value}</div>
     </div>
   );
 }

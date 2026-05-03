@@ -160,6 +160,12 @@ model Property {
   id              String   @id @default(cuid())
   name            String
   address         String?
+  // Cached geocode of `address`. Populated by the US Census Geocoder
+  // (or set manually) and used by the NWS weather pull on the apply
+  // flow. Re-geocoded whenever `address` changes on save.
+  lat             Float?
+  lon             Float?
+  geocodedAt      DateTime?
   notes           String?
   createdByUserId String
   createdAt       DateTime @default(now())

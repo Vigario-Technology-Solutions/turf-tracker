@@ -9,6 +9,7 @@ import {
   PRODUCT_FORM_GRANULAR_POWDER,
 } from "@/lib/constants";
 import { getLookups } from "@/lib/lookups";
+import { getCachedWeather, summarizeForNotes } from "@/lib/weather";
 import { logApplication } from "../_actions";
 import { ApplyCalculator } from "./apply-calculator";
 
@@ -33,6 +34,7 @@ export default async function ApplyCalculatorPage({ params }: Props) {
       where: { id: areaId, propertyId },
       include: {
         soilTests: { orderBy: { testDate: "desc" } },
+        property: { select: { lat: true, lon: true, address: true } },
       },
     }),
     prisma.product.findUnique({ where: { id: productId } }),
@@ -46,6 +48,16 @@ export default async function ApplyCalculatorPage({ params }: Props) {
   const formCode = lookups.productForm.code(product.formId);
   const isGranular =
     formCode === PRODUCT_FORM_GRANULAR_PELLETIZED || formCode === PRODUCT_FORM_GRANULAR_POWDER;
+
+  // Weather autofill: only when the property has been geocoded. Falls
+  // back to manual entry if the NWS lookup fails or returns nothing.
+  const weather =
+    area.property.lat != null && area.property.lon != null
+      ? await getCachedWeather(area.property.lat, area.property.lon)
+      : null;
+  const weatherDefaults = weather
+    ? { tempF: weather.tempF, notes: summarizeForNotes(weather) }
+    : null;
 
   const action = logApplication.bind(null, propertyId, areaId);
 
@@ -70,6 +82,9 @@ export default async function ApplyCalculatorPage({ params }: Props) {
       <ApplyCalculator
         action={action}
         area={{ id: area.id, name: area.name, areaSqFt: area.areaSqFt }}
+        weather={weather}
+        weatherDefaults={weatherDefaults}
+        propertyHasCoords={area.property.lat != null && area.property.lon != null}
         product={{
           id: product.id,
           brand: product.brand,

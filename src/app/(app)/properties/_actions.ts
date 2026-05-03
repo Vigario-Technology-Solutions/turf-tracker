@@ -7,6 +7,7 @@ import prisma from "@/lib/db";
 import { requireSessionUser } from "@/lib/auth/server-session";
 import { canAccessProperty } from "@/lib/auth/guards";
 import { ROLE_OWNER } from "@/lib/constants";
+import { geocodeAddress } from "@/lib/weather/geocode";
 
 /**
  * Property mutations as server actions. Rules:
@@ -54,10 +55,18 @@ export async function createProperty(form: FormData): Promise<ActionResult<{ id:
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
 
+  const geocode = parsed.data.address ? await geocodeAddress(parsed.data.address) : null;
+
   // Single transaction so the creator's owner-membership is never absent.
   const created = await prisma.$transaction(async (tx) => {
     const property = await tx.property.create({
-      data: { ...parsed.data, createdByUserId: user.id },
+      data: {
+        ...parsed.data,
+        createdByUserId: user.id,
+        lat: geocode?.lat ?? null,
+        lon: geocode?.lon ?? null,
+        geocodedAt: geocode ? new Date() : null,
+      },
     });
     await tx.propertyMember.create({
       data: { propertyId: property.id, userId: user.id, role: ROLE_OWNER },
@@ -82,7 +91,31 @@ export async function updateProperty(
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
 
-  await prisma.property.update({ where: { id }, data: parsed.data });
+  // Re-geocode if (a) the address changed, or (b) the row has an address
+  // but no cached coords yet (covers backfill for rows created before
+  // geocoding was wired). Casual edits with the same address + valid
+  // coords don't burn the free Census quota.
+  const existing = await prisma.property.findUnique({
+    where: { id },
+    select: { address: true, lat: true },
+  });
+  const addressChanged = (existing?.address ?? null) !== parsed.data.address;
+  const needsBackfill = parsed.data.address != null && existing?.lat == null;
+  const geocodeUpdate =
+    addressChanged || needsBackfill
+      ? parsed.data.address
+        ? await geocodeAddress(parsed.data.address).then((g) => ({
+            lat: g?.lat ?? null,
+            lon: g?.lon ?? null,
+            geocodedAt: g ? new Date() : null,
+          }))
+        : { lat: null, lon: null, geocodedAt: null }
+      : {};
+
+  await prisma.property.update({
+    where: { id },
+    data: { ...parsed.data, ...geocodeUpdate },
+  });
   revalidatePath("/properties");
   revalidatePath(`/properties/${id}`);
   redirect(`/properties/${id}`);
