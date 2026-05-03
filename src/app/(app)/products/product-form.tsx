@@ -11,6 +11,7 @@ import {
   TAG_SURFACTANT,
   TAG_HUMIC,
 } from "@/lib/constants";
+import { Select } from "@/components/form/select";
 import type { ActionResult } from "./_actions";
 
 const KNOWN_TAGS = [
@@ -275,14 +276,12 @@ export function ProductForm({
           label="Rate unit"
           defaultValue={defaultValues?.mfgRateUnitId?.toString() ?? ""}
           options={applicationUnits}
-          allowEmpty
         />
         <Select
           name="mfgRateBasisId"
           label="Per"
           defaultValue={defaultValues?.mfgRateBasisId?.toString() ?? ""}
           options={mfgRateBases}
-          allowEmpty
         />
       </Section>
 
@@ -411,44 +410,6 @@ function TextArea({
         rows={3}
         className="w-full rounded border border-neutral-300 px-2 py-2 text-sm focus:border-neutral-900 focus:outline-none"
       />
-    </label>
-  );
-}
-
-function Select({
-  name,
-  label,
-  defaultValue,
-  options,
-  required,
-  allowEmpty,
-}: {
-  name: string;
-  label: string;
-  defaultValue?: string;
-  options: LookupRow[];
-  required?: boolean;
-  /** When true, the empty option stays selectable (renders "—") for optional fields. */
-  allowEmpty?: boolean;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-sm font-medium">{label}</span>
-      <select
-        name={name}
-        defaultValue={defaultValue ?? ""}
-        required={required}
-        className="w-full rounded border border-neutral-300 bg-white px-2 py-2 text-sm focus:border-neutral-900 focus:outline-none"
-      >
-        <option value="" disabled={!allowEmpty}>
-          {allowEmpty ? "—" : "Choose…"}
-        </option>
-        {options.map((o) => (
-          <option key={o.id} value={o.id}>
-            {o.name}
-          </option>
-        ))}
-      </select>
     </label>
   );
 }
