@@ -10,7 +10,7 @@ import {
   type Nutrient,
   type ProductLabel,
 } from "@/lib/calc";
-import { compassFromDeg, type WeatherSummary } from "@/lib/weather";
+import { compassFromDeg, type WeatherSummary } from "@/lib/weather/types";
 import type { ActionResult } from "../_actions";
 
 const NUTRIENT_OPTIONS: Nutrient[] = ["N", "P", "K", "Ca", "Mg", "S", "Fe", "Mn", "Zn", "Cu", "B"];

@@ -1,5 +1,6 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
+import { compassFromDeg, type WeatherSummary } from "./types";
 
 /**
  * NWS (api.weather.gov) client. Free, no API key, US-only. NWS asks
@@ -16,35 +17,15 @@ import { unstable_cache } from "next/cache";
  *
  * Returns null on any failure so the apply-flow can fall back to
  * manual entry. Don't throw — this runs in render.
+ *
+ * `WeatherSummary` lives in ./types so client components can use the
+ * shape without dragging this file into the browser bundle.
  */
 
 const USER_AGENT =
   "turf-tracker (https://github.com/TylerVigario/turf-tracker, contact: tylervigario90@gmail.com)";
 
-export interface WeatherSummary {
-  /** Air temperature, °F. */
-  tempF: number | null;
-  /** Dewpoint, °F. */
-  dewpointF: number | null;
-  /** Relative humidity, percent. */
-  humidityPct: number | null;
-  /** Wind speed, mph. */
-  windMph: number | null;
-  /** Wind direction in degrees (meteorological — from where wind comes). */
-  windDirDeg: number | null;
-  /** Free-text conditions (e.g. "Partly cloudy"). */
-  conditions: string | null;
-  /** Observation time, ISO. */
-  observedAt: string | null;
-  /** Reporting station id (e.g. "KFAT"). */
-  stationId: string | null;
-  /** Today's high °F (from forecast). */
-  todayHighF: number | null;
-  /** Today's low °F (from forecast). */
-  todayLowF: number | null;
-  /** Maximum probability of precipitation, percent, across next 6h forecast periods. */
-  precipProbNext6hPct: number | null;
-}
+export type { WeatherSummary } from "./types";
 
 interface PointsResponse {
   properties?: {
@@ -198,30 +179,6 @@ export async function getCachedWeather(lat: number, lon: number): Promise<Weathe
     tags: [`weather:${key}`],
   });
   return cached();
-}
-
-/** Compass label for a wind direction in degrees ("NNE", "WSW", …). */
-export function compassFromDeg(deg: number | null): string | null {
-  if (deg == null) return null;
-  const labels = [
-    "N",
-    "NNE",
-    "NE",
-    "ENE",
-    "E",
-    "ESE",
-    "SE",
-    "SSE",
-    "S",
-    "SSW",
-    "SW",
-    "WSW",
-    "W",
-    "WNW",
-    "NW",
-    "NNW",
-  ];
-  return labels[Math.round((deg % 360) / 22.5) % 16];
 }
 
 /** One-line summary suitable for stuffing into Application.weatherNotes. */
