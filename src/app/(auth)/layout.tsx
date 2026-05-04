@@ -10,10 +10,13 @@ export default async function AuthLayout({ children }: { children: React.ReactNo
   if (user) redirect("/");
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-neutral-50 px-4">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-neutral-50 px-4">
       <div className="w-full max-w-sm rounded border border-neutral-200 bg-white p-6 shadow-sm">
         {children}
       </div>
+      {process.env.APP_VERSION && (
+        <p className="mt-4 font-mono text-xs text-neutral-500">v{process.env.APP_VERSION}</p>
+      )}
     </div>
   );
 }
