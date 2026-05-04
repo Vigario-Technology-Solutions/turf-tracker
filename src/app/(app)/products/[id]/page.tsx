@@ -89,7 +89,10 @@ export default async function ProductDetailPage({ params }: Props) {
           <span className="text-xs uppercase tracking-wide text-neutral-500">
             Manufacturer rate
           </span>{" "}
-          {product.mfgRateValue} {lookups.applicationUnit.displayName(product.mfgRateUnitId)}{" "}
+          {product.mfgRateValue} {lookups.applicationUnit.displayName(product.mfgRateUnitId)} per{" "}
+          {product.mfgRatePerValue != null && product.mfgRatePerValue !== 1
+            ? `${product.mfgRatePerValue.toLocaleString()} `
+            : ""}
           {lookups.mfgRateBasis.displayName(product.mfgRateBasisId)}
         </section>
       )}

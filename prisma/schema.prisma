@@ -299,8 +299,13 @@ model Product {
   pkgSizeUnitId   Int
   pkgCostUsd      Float
   // Manufacturer rate (FK lookups — never free-form)
+  // Manufacturer rate: <mfgRateValue> <mfgRateUnit> per <mfgRatePerValue>
+  // <mfgRateBasis>. Fully variable — covers "1 fl oz per 1,000 sq ft",
+  // "1 gal per 12,800 sq ft", "10 lb per 1 acre", "4 fl oz per 1 gal
+  // of carrier" without picking from a fixed preset list.
   mfgRateValue    Float?
   mfgRateUnitId   Int?
+  mfgRatePerValue Float?
   mfgRateBasisId  Int?
   tags            String[] // contains_p, contains_b, contains_na, acidifying, pgr, etc.
   sharedInHousehold Boolean @default(false)

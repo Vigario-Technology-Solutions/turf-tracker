@@ -54,6 +54,7 @@ const productInput = z.object({
 
   mfgRateValue: optionalNumber,
   mfgRateUnitId: optionalLookupId,
+  mfgRatePerValue: optionalNumber,
   mfgRateBasisId: optionalLookupId,
 
   // Tags ship as a string array on the model. We collect them as
@@ -111,6 +112,7 @@ function readForm(form: FormData) {
 
     mfgRateValue: get("mfgRateValue"),
     mfgRateUnitId: get("mfgRateUnitId"),
+    mfgRatePerValue: get("mfgRatePerValue"),
     mfgRateBasisId: get("mfgRateBasisId"),
 
     tags: Array.from(tagSet),

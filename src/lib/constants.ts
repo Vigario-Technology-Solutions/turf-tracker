@@ -45,10 +45,13 @@ export const UNIT_FL_OZ = "fl_oz" as const;
 export const UNIT_GAL = "gal" as const;
 
 // ─────────────────────────────────────────────────────────────────────
-// MfgRateBasis codes — the per-X half of "0.5 fl oz per 1,000 sq ft"
+// MfgRateBasis codes — the per-X UNIT half of "0.5 fl oz per 1,000 sq ft".
+// The numeric quantity (1000, 12800, etc.) lives in Product.mfgRatePerValue;
+// these codes are just the unit of the denominator.
 // ─────────────────────────────────────────────────────────────────────
-export const MFG_RATE_BASIS_1000_SQFT = "1000_sqft" as const;
+export const MFG_RATE_BASIS_SQFT = "sqft" as const;
 export const MFG_RATE_BASIS_ACRE = "acre" as const;
+export const MFG_RATE_BASIS_HECTARE = "hectare" as const;
 export const MFG_RATE_BASIS_GAL_CARRIER = "gal_carrier" as const;
 
 // ─────────────────────────────────────────────────────────────────────

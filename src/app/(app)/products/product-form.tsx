@@ -50,6 +50,7 @@ interface DefaultValues {
 
   mfgRateValue?: number | null;
   mfgRateUnitId?: number | null;
+  mfgRatePerValue?: number | null;
   mfgRateBasisId?: number | null;
 
   tags?: string[];
@@ -270,6 +271,7 @@ export function ProductForm({
           step="0.01"
           min={0}
           defaultValue={fmt(defaultValues?.mfgRateValue ?? undefined)}
+          placeholder="1"
         />
         <Select
           name="mfgRateUnitId"
@@ -277,9 +279,18 @@ export function ProductForm({
           defaultValue={defaultValues?.mfgRateUnitId?.toString() ?? ""}
           options={applicationUnits}
         />
+        <Field
+          name="mfgRatePerValue"
+          label="Per (qty)"
+          type="number"
+          step="any"
+          min={0}
+          defaultValue={fmt(defaultValues?.mfgRatePerValue ?? undefined)}
+          placeholder="12800"
+        />
         <Select
           name="mfgRateBasisId"
-          label="Per"
+          label="Per (unit)"
           defaultValue={defaultValues?.mfgRateBasisId?.toString() ?? ""}
           options={mfgRateBases}
         />

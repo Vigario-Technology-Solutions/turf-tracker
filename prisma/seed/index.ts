@@ -59,9 +59,13 @@ const APPLICATION_UNITS = [
 ];
 
 const MFG_RATE_BASES = [
-  { code: "1000_sqft", name: "per 1,000 sq ft", sortOrder: 10 },
-  { code: "acre", name: "per acre", sortOrder: 20 },
-  { code: "gal_carrier", name: "per gallon of carrier", sortOrder: 30 },
+  // The denominator UNIT only — the numeric quantity (1000, 12800, …)
+  // lives in Product.mfgRatePerValue per row. So "1 gal per 12,800 sq
+  // ft" picks `sqft` here and stores 12800 in mfgRatePerValue.
+  { code: "sqft", name: "sq ft", sortOrder: 10 },
+  { code: "acre", name: "acre", sortOrder: 20 },
+  { code: "hectare", name: "hectare", sortOrder: 30 },
+  { code: "gal_carrier", name: "gallon of carrier", sortOrder: 40 },
 ];
 
 const IRRIGATION_HEAD_TYPES = [
