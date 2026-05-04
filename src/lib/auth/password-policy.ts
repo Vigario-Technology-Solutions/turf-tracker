@@ -4,7 +4,30 @@
  * @node-rs/argon2 into the browser bundle.
  *
  * Policy: 12+ chars with upper, lower, digit, and a special character.
+ *
+ * Single source of truth for the rules: `passwordSchema`. The
+ * imperative `validatePassword` wrapper exists for callers that want
+ * the legacy `{valid, error}` shape (server-side checks); RHF +
+ * `zodResolver(schema)` consume the schema directly.
  */
+
+import { z } from "zod";
+
+export const passwordSchema = z
+  .string()
+  .min(12, "Password must be at least 12 characters")
+  .refine((v) => /[A-Z]/.test(v), {
+    message: "Password must contain at least one uppercase letter",
+  })
+  .refine((v) => /[a-z]/.test(v), {
+    message: "Password must contain at least one lowercase letter",
+  })
+  .refine((v) => /[0-9]/.test(v), {
+    message: "Password must contain at least one number",
+  })
+  .refine((v) => /[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(v), {
+    message: "Password must contain at least one special character (!@#$%^&* etc.)",
+  });
 
 export interface PasswordValidationResult {
   valid: boolean;
@@ -12,23 +35,7 @@ export interface PasswordValidationResult {
 }
 
 export function validatePassword(password: string): PasswordValidationResult {
-  if (password.length < 12) {
-    return { valid: false, error: "Password must be at least 12 characters" };
-  }
-  if (!/[A-Z]/.test(password)) {
-    return { valid: false, error: "Password must contain at least one uppercase letter" };
-  }
-  if (!/[a-z]/.test(password)) {
-    return { valid: false, error: "Password must contain at least one lowercase letter" };
-  }
-  if (!/[0-9]/.test(password)) {
-    return { valid: false, error: "Password must contain at least one number" };
-  }
-  if (!/[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(password)) {
-    return {
-      valid: false,
-      error: "Password must contain at least one special character (!@#$%^&* etc.)",
-    };
-  }
-  return { valid: true };
+  const result = passwordSchema.safeParse(password);
+  if (result.success) return { valid: true };
+  return { valid: false, error: result.error.issues[0]?.message ?? "Invalid password" };
 }
