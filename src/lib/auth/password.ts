@@ -1,4 +1,9 @@
-import "server-only";
+// No `import "server-only"` — the CLI imports this directly to hash
+// passwords for `users:create`, and `server-only` throws at module
+// load time outside a Next.js runtime. The real "server-only" guard
+// is `@node-rs/argon2`: it ships platform-specific .node binaries
+// that the browser bundler can't load, so any client-side import
+// fails at build time anyway.
 import { hash as argonHash, verify as argonVerify } from "@node-rs/argon2";
 
 /**
