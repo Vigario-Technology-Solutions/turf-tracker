@@ -1,4 +1,16 @@
 # Changelog
+## [0.2.0](https://github.com/TylerVigario/turf-tracker/compare/v0.1.0...v0.2.0) (2026-05-04)
+
+### Features
+
+* Variable per-X quantity for product manufacturer rate
+* **forms:** Rhf + zodResolver pattern, applied first to sign-up
+* **forms:** Roll rhf + zodResolver across every form
+* **cli:** Turf operational CLI with users:list + users:create
+* **cli:** Users:delete with FK-aware pre-flight
+* **ui:** Show APP_VERSION chip in auth + app shells
+* **profile:** Editor for name, displayName, defaultProperty, units, password
+
 ## [0.1.0](https://github.com/TylerVigario/turf-tracker/releases/tag/v0.1.0) (2026-05-04)
 
 ### Features
