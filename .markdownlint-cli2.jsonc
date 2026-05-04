@@ -9,10 +9,5 @@
     "MD060": { "style": "compact" }
   },
   "globs": ["**/*.md"],
-  "ignores": [
-    "node_modules/**",
-    ".next/**",
-    "generated/**",
-    "prisma/migrations/**"
-  ]
+  "ignores": ["node_modules/**", ".next/**", "generated/**", "prisma/migrations/**"]
 }

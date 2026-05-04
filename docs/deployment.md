@@ -33,35 +33,45 @@ This document only captures **turf-tracker's specific MANIFEST values and the di
   ],
   "nodeVersion": "24",
   "requiredTools": {
-    "prisma": "^7.7.0"
+    "prisma": "^7.8.0"
   }
 }
 ```
 
-`MANIFEST.requiredEnv` mirrors [`src/lib/required-env.json`](../src/lib/required-env.json), which is also the input to [`src/lib/runtime-config.ts`](../src/lib/runtime-config.ts) for fail-fast startup validation. The release workflow reads from the same JSON so source / runtime / contract stay aligned.
+`MANIFEST.requiredEnv` mirrors [`src/lib/required-env.json`](../src/lib/required-env.json), which is also the input to [`src/lib/runtime-config.ts`](../src/lib/runtime-config.ts) for fail-fast startup validation. The release workflow reads from the same JSON via `--slurpfile` so source / runtime / contract stay aligned.
+
+The two external integrations live now (US Census Geocoder for property addresses, NWS for current weather + forecast on the apply page) are both **API-key-free**, so neither shows up in `optionalEnv`. If we move to keyed providers — Google Maps for richer geocode / map UX, OpenWeatherMap for non-US coverage — they'd land in `optionalEnv` alongside `CIMIS_API_KEY`.
 
 ## Diffs from vis-daily-tracker
 
 | Field | vis-daily-tracker | turf-tracker | Reason |
 | --- | --- | --- | --- |
-| `requiredEnv` | includes `STORAGE_PATH` | omits `STORAGE_PATH` | Phase 0 has no photo uploads. Add when photo-attach lands in Phase 4. |
-| `optionalEnv` | `GOOGLE_MAPS_API_KEY`, `NEXT_PUBLIC_GOOGLE_MAPS_KEY` | `CIMIS_API_KEY` | Different external integrations. CIMIS for Phase 4 ET₀ auto-fetch. |
-| `cli` | declares `bin/dailies.js` + subcommands | absent | No operator CLI shipped initially. Revisit when we have non-web admin tasks (e.g. soil test PDF import). |
+| `requiredEnv` | includes `STORAGE_PATH` | omits `STORAGE_PATH` | No photo uploads yet. Add when photo-attach lands in Phase 4. |
+| `optionalEnv` | `GOOGLE_MAPS_API_KEY`, `NEXT_PUBLIC_GOOGLE_MAPS_KEY` | `CIMIS_API_KEY` | Different external integrations. Geocoding (US Census) + weather (NWS) are key-free. CIMIS for Phase 4 ET₀ auto-fetch. |
+| `cli` | declares `bin/dailies.js` + subcommands | absent | No operator CLI shipped. Revisit when we have non-web admin tasks (e.g. soil-test PDF import). |
 | `serverExternalPackages` | sharp, prisma client+adapter, libheif-js, exifr | prisma client+adapter, argon2 | No image pipeline yet. |
-| `requiredTools.prisma` | `^7.8.0` | `^7.7.0` | Pinned slightly looser; tighten when we lock a specific feature. |
+| `requiredTools.prisma` | `^7.8.0` | `^7.8.0` | In lockstep. |
 
 ## Source-side build contract
 
 - `next.config.ts` uses `output: "standalone"` and declares native deps in `serverExternalPackages`
 - `package.json` `engines.node` and `.nvmrc` pin Node 24 (matching `MANIFEST.nodeVersion`)
-- `npm run build:seed` (TBD: add `scripts/build-seed.ts`) esbuild-bundles `prisma/seed/index.ts` → `bin/seed.js` so prod can run it via plain `node` without tsx installed
-- Conventional Commits + semver tagging (same convention as vis-daily-tracker)
+- `npm run build:seed` (`scripts/build-seed.ts`) esbuild-bundles `prisma/seed/index.ts` → `bin/seed.js` so prod can run it via plain `node` without tsx installed. Native externals: `@prisma/*`, `prisma`, `@node-rs/argon2`.
+- Conventional Commits (commitlint-enforced) drive semver via `git-cliff` (`cliff.toml`)
+- Husky pre-commit hooks are skipped in CI via `HUSKY=0`
+
+## CI / release workflow
+
+`.github/workflows/release.yml` is `workflow_dispatch`-triggered (manual). Two jobs:
+
+1. **gate** — spins up Postgres 17 service, runs `typecheck` + `lint` + `format` + `test`. Verifies Node major pins agree across `NODE_VERSION` env, `.nvmrc`, and `package.json` `engines.node`.
+2. **release** — installs `git-cliff`, computes the next version from commit history (or accepts a manual `bump` input), bumps `package.json`, builds the seed bundle + standalone Next bundle, packages the tarball with `BUILD_INFO` + `MANIFEST`, computes `SHA256SUMS`, regenerates `CHANGELOG.md`, commits + tags + pushes, and creates a draft GH Release with the tarball + sums attached before flipping it to published. The two-step publish guarantees the `release.published` webhook only fires once both assets are uploaded.
+
+The `MANIFEST` is built inline in the workflow via `jq` (slurpfile from `src/lib/required-env.json`), so source / runtime / contract stay aligned.
 
 ## Phase staging for the deploy contract
 
-- **Phase 0 (now):** localhost only. No CI, no MANIFEST, no prod host. `npm run dev`.
-- **Phase 1:** still local dev; deploy contract is dormant.
-- **Phase 2 (first prod cut):** stand up GitHub Actions `release.yml` matching vis-daily-tracker's, tag `v0.1.0`, prod-Claude consumes the artifact on the prod host (or a parallel one). This is when the contract becomes load-bearing.
+- **Phase 0 (done):** localhost only. No CI, no MANIFEST, no prod host. `npm run dev`.
+- **Phase 1 (done):** local dev with the full app shape and the calc + apply flow.
+- **Phase 2 (now):** `release.yml` lives in this repo. Run "Release" with no bump → first auto-detected tag. Prod-Claude consumes the artifact on the prod host. **This is when the contract becomes load-bearing.**
 - **Phase 3+:** family/multi-user remote access via the prod host's public origin (`BETTER_AUTH_URL`).
-
-Until Phase 2 there's nothing to do here — this file exists so when we get there, the contract is documented and prod-Claude can work against it without surprises.
