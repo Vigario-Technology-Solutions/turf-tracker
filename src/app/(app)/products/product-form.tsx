@@ -1,7 +1,11 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import type { LookupRow } from "@/lib/lookup-helpers";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { Field } from "@/components/form/field";
+import { Select } from "@/components/form/select";
+import { TextArea } from "@/components/form/text-area";
 import {
   TAG_CONTAINS_P,
   TAG_CONTAINS_B,
@@ -11,7 +15,12 @@ import {
   TAG_SURFACTANT,
   TAG_HUMIC,
 } from "@/lib/constants";
-import { Select } from "@/components/form/select";
+import {
+  productFormSchema,
+  type ProductFormInput,
+  type ProductFormOutput,
+} from "@/lib/forms/product";
+import type { LookupRow } from "@/lib/lookup-helpers";
 import type { ActionResult } from "./_actions";
 
 const KNOWN_TAGS = [
@@ -67,232 +76,172 @@ export function ProductForm({
   applicationUnits,
   mfgRateBases,
 }: {
-  action: (form: FormData) => Promise<ActionResult<unknown>>;
+  action: (values: ProductFormOutput) => Promise<ActionResult<unknown>>;
   defaultValues?: DefaultValues;
   submitLabel: string;
   productForms: LookupRow[];
   applicationUnits: LookupRow[];
   mfgRateBases: LookupRow[];
 }) {
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
-  const tagSet = new Set(defaultValues?.tags ?? []);
-  const customTagSeed = (defaultValues?.tags ?? [])
-    .filter((t) => !KNOWN_TAGS.some((k) => k.value === t))
-    .join(", ");
+  const [serverError, setServerError] = useState<string | null>(null);
+
+  const knownTagSet = new Set<string>(KNOWN_TAGS.map((t) => t.value));
+  const incomingTags = defaultValues?.tags ?? [];
+  const customTagSeed = incomingTags.filter((t) => !knownTagSet.has(t)).join(", ");
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<ProductFormInput, unknown, ProductFormOutput>({
+    resolver: zodResolver(productFormSchema),
+    mode: "onTouched",
+    defaultValues: {
+      brand: defaultValues?.brand ?? "",
+      name: defaultValues?.name ?? "",
+      formId: defaultValues?.formId?.toString() ?? "",
+
+      nPct: defaultValues?.nPct?.toString() ?? "0",
+      p2o5Pct: defaultValues?.p2o5Pct?.toString() ?? "0",
+      k2oPct: defaultValues?.k2oPct?.toString() ?? "0",
+      caPct: defaultValues?.caPct?.toString() ?? "0",
+      mgPct: defaultValues?.mgPct?.toString() ?? "0",
+      sPct: defaultValues?.sPct?.toString() ?? "0",
+      naPct: defaultValues?.naPct?.toString() ?? "0",
+      fePct: defaultValues?.fePct?.toString() ?? "0",
+      mnPct: defaultValues?.mnPct?.toString() ?? "0",
+      znPct: defaultValues?.znPct?.toString() ?? "0",
+      cuPct: defaultValues?.cuPct?.toString() ?? "0",
+      bPct: defaultValues?.bPct?.toString() ?? "0",
+
+      densityLbPerGal: defaultValues?.densityLbPerGal?.toString() ?? "",
+
+      pkgSizeValue: defaultValues?.pkgSizeValue?.toString() ?? "",
+      pkgSizeUnitId: defaultValues?.pkgSizeUnitId?.toString() ?? "",
+      pkgCostUsd: defaultValues?.pkgCostUsd?.toString() ?? "0",
+
+      mfgRateValue: defaultValues?.mfgRateValue?.toString() ?? "",
+      mfgRateUnitId: defaultValues?.mfgRateUnitId?.toString() ?? "",
+      mfgRatePerValue: defaultValues?.mfgRatePerValue?.toString() ?? "",
+      mfgRateBasisId: defaultValues?.mfgRateBasisId?.toString() ?? "",
+
+      tags: incomingTags.filter((t) => knownTagSet.has(t)),
+      customTags: customTagSeed,
+      sharedInHousehold: defaultValues?.sharedInHousehold ?? false,
+
+      notes: defaultValues?.notes ?? "",
+    },
+  });
+
+  const onSubmit = handleSubmit(async (data) => {
+    setServerError(null);
+    const result = await action(data);
+    if (!result.ok) setServerError(result.error);
+  });
 
   return (
-    <form
-      className="space-y-5"
-      action={(form) => {
-        setError(null);
-        startTransition(async () => {
-          const result = await action(form);
-          if (!result.ok) setError(result.error);
-        });
-      }}
-    >
+    <form className="space-y-5" onSubmit={(e) => void onSubmit(e)} noValidate>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field
-          name="brand"
           label="Brand"
-          defaultValue={defaultValues?.brand ?? ""}
-          required
           autoFocus
+          registration={register("brand")}
+          error={errors.brand?.message}
         />
-        <Field name="name" label="Product name" defaultValue={defaultValues?.name ?? ""} required />
+        <Field label="Product name" registration={register("name")} error={errors.name?.message} />
       </div>
 
       <Select
-        name="formId"
         label="Form"
-        defaultValue={defaultValues?.formId?.toString() ?? ""}
         options={productForms}
         required
+        registration={register("formId")}
+        error={errors.formId?.message}
       />
 
       <Section title="Guaranteed analysis (label percent)">
-        <Field
-          name="nPct"
-          label="N"
-          type="number"
-          step="0.01"
-          min={0}
-          max={100}
-          defaultValue={fmt(defaultValues?.nPct)}
-        />
-        <Field
-          name="p2o5Pct"
-          label="P₂O₅"
-          type="number"
-          step="0.01"
-          min={0}
-          max={100}
-          defaultValue={fmt(defaultValues?.p2o5Pct)}
-        />
-        <Field
-          name="k2oPct"
-          label="K₂O"
-          type="number"
-          step="0.01"
-          min={0}
-          max={100}
-          defaultValue={fmt(defaultValues?.k2oPct)}
-        />
-        <Field
-          name="caPct"
-          label="Ca"
-          type="number"
-          step="0.01"
-          min={0}
-          max={100}
-          defaultValue={fmt(defaultValues?.caPct)}
-        />
-        <Field
-          name="mgPct"
-          label="Mg"
-          type="number"
-          step="0.01"
-          min={0}
-          max={100}
-          defaultValue={fmt(defaultValues?.mgPct)}
-        />
-        <Field
-          name="sPct"
-          label="S"
-          type="number"
-          step="0.01"
-          min={0}
-          max={100}
-          defaultValue={fmt(defaultValues?.sPct)}
-        />
-        <Field
-          name="naPct"
-          label="Na"
-          type="number"
-          step="0.01"
-          min={0}
-          max={100}
-          defaultValue={fmt(defaultValues?.naPct)}
-        />
+        <PctField label="N" name="nPct" register={register} errors={errors} />
+        <PctField label="P₂O₅" name="p2o5Pct" register={register} errors={errors} />
+        <PctField label="K₂O" name="k2oPct" register={register} errors={errors} />
+        <PctField label="Ca" name="caPct" register={register} errors={errors} />
+        <PctField label="Mg" name="mgPct" register={register} errors={errors} />
+        <PctField label="S" name="sPct" register={register} errors={errors} />
+        <PctField label="Na" name="naPct" register={register} errors={errors} />
       </Section>
 
       <Section title="Micronutrients (percent)">
-        <Field
-          name="fePct"
-          label="Fe"
-          type="number"
-          step="0.01"
-          min={0}
-          max={100}
-          defaultValue={fmt(defaultValues?.fePct)}
-        />
-        <Field
-          name="mnPct"
-          label="Mn"
-          type="number"
-          step="0.01"
-          min={0}
-          max={100}
-          defaultValue={fmt(defaultValues?.mnPct)}
-        />
-        <Field
-          name="znPct"
-          label="Zn"
-          type="number"
-          step="0.01"
-          min={0}
-          max={100}
-          defaultValue={fmt(defaultValues?.znPct)}
-        />
-        <Field
-          name="cuPct"
-          label="Cu"
-          type="number"
-          step="0.01"
-          min={0}
-          max={100}
-          defaultValue={fmt(defaultValues?.cuPct)}
-        />
-        <Field
-          name="bPct"
-          label="B"
-          type="number"
-          step="0.01"
-          min={0}
-          max={100}
-          defaultValue={fmt(defaultValues?.bPct)}
-        />
+        <PctField label="Fe" name="fePct" register={register} errors={errors} />
+        <PctField label="Mn" name="mnPct" register={register} errors={errors} />
+        <PctField label="Zn" name="znPct" register={register} errors={errors} />
+        <PctField label="Cu" name="cuPct" register={register} errors={errors} />
+        <PctField label="B" name="bPct" register={register} errors={errors} />
       </Section>
 
       <Field
-        name="densityLbPerGal"
         label="Density (lb/gal) — required for liquids"
         type="number"
         step="0.01"
         min={0}
-        defaultValue={
-          defaultValues?.densityLbPerGal != null ? defaultValues.densityLbPerGal.toString() : ""
-        }
+        registration={register("densityLbPerGal")}
+        error={errors.densityLbPerGal?.message}
       />
 
       <Section title="Packaging + cost">
         <Field
-          name="pkgSizeValue"
           label="Package size"
           type="number"
           step="0.01"
           min={0}
-          defaultValue={fmt(defaultValues?.pkgSizeValue)}
-          required
+          registration={register("pkgSizeValue")}
+          error={errors.pkgSizeValue?.message}
         />
         <Select
-          name="pkgSizeUnitId"
           label="Unit"
-          defaultValue={defaultValues?.pkgSizeUnitId?.toString() ?? ""}
           options={applicationUnits}
           required
+          registration={register("pkgSizeUnitId")}
+          error={errors.pkgSizeUnitId?.message}
         />
         <Field
-          name="pkgCostUsd"
           label="Package cost ($)"
           type="number"
           step="0.01"
           min={0}
-          defaultValue={fmt(defaultValues?.pkgCostUsd)}
+          registration={register("pkgCostUsd")}
+          error={errors.pkgCostUsd?.message}
         />
       </Section>
 
       <Section title="Manufacturer rate (optional)">
         <Field
-          name="mfgRateValue"
           label="Rate value"
           type="number"
           step="0.01"
           min={0}
-          defaultValue={fmt(defaultValues?.mfgRateValue ?? undefined)}
           placeholder="1"
+          registration={register("mfgRateValue")}
+          error={errors.mfgRateValue?.message}
         />
         <Select
-          name="mfgRateUnitId"
           label="Rate unit"
-          defaultValue={defaultValues?.mfgRateUnitId?.toString() ?? ""}
           options={applicationUnits}
+          registration={register("mfgRateUnitId")}
+          error={errors.mfgRateUnitId?.message}
         />
         <Field
-          name="mfgRatePerValue"
           label="Per (qty)"
           type="number"
           step="any"
           min={0}
-          defaultValue={fmt(defaultValues?.mfgRatePerValue ?? undefined)}
           placeholder="12800"
+          registration={register("mfgRatePerValue")}
+          error={errors.mfgRatePerValue?.message}
         />
         <Select
-          name="mfgRateBasisId"
           label="Per (unit)"
-          defaultValue={defaultValues?.mfgRateBasisId?.toString() ?? ""}
           options={mfgRateBases}
+          registration={register("mfgRateBasisId")}
+          error={errors.mfgRateBasisId?.message}
         />
       </Section>
 
@@ -303,9 +252,8 @@ export function ProductForm({
             <label key={t.value} className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
-                name="tags"
                 value={t.value}
-                defaultChecked={tagSet.has(t.value)}
+                {...register("tags")}
                 className="h-4 w-4 rounded border-neutral-300"
               />
               {t.label}
@@ -315,8 +263,7 @@ export function ProductForm({
         <label className="mt-3 block">
           <span className="mb-1 block text-sm font-medium">Custom tags (comma-separated)</span>
           <input
-            name="customTags"
-            defaultValue={customTagSeed}
+            {...register("customTags")}
             className="w-full rounded border border-neutral-300 px-2 py-2 text-sm focus:border-neutral-900 focus:outline-none"
           />
         </label>
@@ -325,31 +272,25 @@ export function ProductForm({
       <label className="flex items-center gap-2 text-sm">
         <input
           type="checkbox"
-          name="sharedInHousehold"
-          defaultChecked={defaultValues?.sharedInHousehold ?? false}
+          {...register("sharedInHousehold")}
           className="h-4 w-4 rounded border-neutral-300"
         />
         Share with property contributors
       </label>
 
-      <TextArea name="notes" label="Notes" defaultValue={defaultValues?.notes ?? ""} />
+      <TextArea label="Notes" registration={register("notes")} error={errors.notes?.message} />
 
-      {error && <p className="text-sm text-red-700">{error}</p>}
+      {serverError && <p className="text-sm text-red-700">{serverError}</p>}
 
       <button
         type="submit"
-        disabled={pending}
+        disabled={isSubmitting}
         className="rounded bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60"
       >
-        {pending ? "Saving…" : submitLabel}
+        {isSubmitting ? "Saving…" : submitLabel}
       </button>
     </form>
   );
-}
-
-function fmt(v: number | undefined): string {
-  if (v == null) return "";
-  return v.toString();
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -361,66 +302,41 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function Field({
-  name,
+/** Convenience wrapper for the dozen percent inputs in the analysis sections. */
+function PctField({
   label,
-  defaultValue,
-  required,
-  autoFocus,
-  type = "text",
-  placeholder,
-  min,
-  max,
-  step,
+  name,
+  register,
+  errors,
 }: {
-  name: string;
   label: string;
-  defaultValue?: string;
-  required?: boolean;
-  autoFocus?: boolean;
-  type?: string;
-  placeholder?: string;
-  min?: number;
-  max?: number;
-  step?: number | string;
+  name:
+    | "nPct"
+    | "p2o5Pct"
+    | "k2oPct"
+    | "caPct"
+    | "mgPct"
+    | "sPct"
+    | "naPct"
+    | "fePct"
+    | "mnPct"
+    | "znPct"
+    | "cuPct"
+    | "bPct";
+  register: ReturnType<typeof useForm<ProductFormInput, unknown, ProductFormOutput>>["register"];
+  errors: ReturnType<
+    typeof useForm<ProductFormInput, unknown, ProductFormOutput>
+  >["formState"]["errors"];
 }) {
   return (
-    <label className="block">
-      <span className="mb-1 block text-sm font-medium">{label}</span>
-      <input
-        name={name}
-        type={type}
-        defaultValue={defaultValue}
-        required={required}
-        autoFocus={autoFocus}
-        placeholder={placeholder}
-        min={min}
-        max={max}
-        step={step}
-        className="w-full rounded border border-neutral-300 px-2 py-2 text-sm focus:border-neutral-900 focus:outline-none"
-      />
-    </label>
-  );
-}
-
-function TextArea({
-  name,
-  label,
-  defaultValue,
-}: {
-  name: string;
-  label: string;
-  defaultValue?: string;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-sm font-medium">{label}</span>
-      <textarea
-        name={name}
-        defaultValue={defaultValue}
-        rows={3}
-        className="w-full rounded border border-neutral-300 px-2 py-2 text-sm focus:border-neutral-900 focus:outline-none"
-      />
-    </label>
+    <Field
+      label={label}
+      type="number"
+      step="0.01"
+      min={0}
+      max={100}
+      registration={register(name)}
+      error={errors[name]?.message}
+    />
   );
 }

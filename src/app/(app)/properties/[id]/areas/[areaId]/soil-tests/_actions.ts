@@ -2,116 +2,61 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { z } from "zod";
 import prisma from "@/lib/db";
 import { requireSessionUser } from "@/lib/auth/server-session";
 import { canAccessArea } from "@/lib/auth/guards";
 import { ROLE_CONTRIBUTOR, ROLE_OWNER } from "@/lib/constants";
+import { soilTestFormSchema, type SoilTestFormValues } from "@/lib/forms/soil-test";
 
 /**
- * Soil-test mutations. Per SPEC §5.5 every nutrient field is nullable —
- * different labs report different sets. We accept blank → null for
- * everything except `testDate`. The newly-created test is set as the
- * area's `currentSoilTestId` (single-test workflow); a separate action
- * lets the user pick a different test as current later.
+ * Soil-test mutations. Per SPEC §5.5 every nutrient field is nullable
+ * — different labs report different sets. The newly-created test is
+ * set as the area's `currentSoilTestId` (single-test workflow); a
+ * separate action lets the user pick a different test as current.
  */
 
 export type ActionResult<T = unknown> = { ok: true; data: T } | { ok: false; error: string };
 
-const optionalNumber = z
-  .string()
-  .trim()
-  .transform((v) => (v.length === 0 ? null : Number(v)))
-  .pipe(z.number().nonnegative("Must be ≥ 0").nullable());
-
-const optionalString = z
-  .string()
-  .trim()
-  .max(200)
-  .transform((v) => (v.length === 0 ? null : v));
-
-const soilTestInput = z.object({
-  testDate: z
-    .string()
-    .min(1, "Test date is required")
-    .transform((v, ctx) => {
-      const d = new Date(v);
-      if (isNaN(d.getTime())) {
-        ctx.addIssue({ code: "custom", message: "Invalid test date" });
-        return z.NEVER;
-      }
-      return d;
-    }),
-  lab: optionalString,
-  labReportId: optionalString,
-  pH: z
-    .string()
-    .trim()
-    .transform((v) => (v.length === 0 ? null : Number(v)))
-    .pipe(z.number().min(0).max(14).nullable()),
-  nPpm: optionalNumber,
-  pPpm: optionalNumber,
-  kPpm: optionalNumber,
-  sPpm: optionalNumber,
-  caPpm: optionalNumber,
-  mgPpm: optionalNumber,
-  naPpm: optionalNumber,
-  fePpm: optionalNumber,
-  mnPpm: optionalNumber,
-  znPpm: optionalNumber,
-  cuPpm: optionalNumber,
-  bPpm: optionalNumber,
-  omPct: z
-    .string()
-    .trim()
-    .transform((v) => (v.length === 0 ? null : Number(v)))
-    .pipe(z.number().min(0).max(100).nullable()),
-  cecMeq100g: optionalNumber,
-  notes: z
-    .string()
-    .trim()
-    .max(2000)
-    .transform((v) => (v.length === 0 ? null : v)),
-});
-
-function readForm(form: FormData) {
-  const get = (name: string) => {
-    const v = form.get(name);
-    return typeof v === "string" ? v : "";
+/**
+ * Coerce form values into the Prisma write shape. Empty strings on
+ * optional numeric fields become null; non-empty get parsed.
+ */
+function dbWriteable(values: SoilTestFormValues, areaId: string) {
+  const num = (v: string) => (v.length === 0 ? null : Number(v));
+  return {
+    areaId,
+    testDate: new Date(values.testDate),
+    lab: values.lab.length === 0 ? null : values.lab,
+    labReportId: values.labReportId.length === 0 ? null : values.labReportId,
+    pH: num(values.pH),
+    nPpm: num(values.nPpm),
+    pPpm: num(values.pPpm),
+    kPpm: num(values.kPpm),
+    sPpm: num(values.sPpm),
+    caPpm: num(values.caPpm),
+    mgPpm: num(values.mgPpm),
+    naPpm: num(values.naPpm),
+    fePpm: num(values.fePpm),
+    mnPpm: num(values.mnPpm),
+    znPpm: num(values.znPpm),
+    cuPpm: num(values.cuPpm),
+    bPpm: num(values.bPpm),
+    omPct: num(values.omPct),
+    cecMeq100g: num(values.cecMeq100g),
+    notes: values.notes.length === 0 ? null : values.notes,
   };
-  return soilTestInput.safeParse({
-    testDate: get("testDate"),
-    lab: get("lab"),
-    labReportId: get("labReportId"),
-    pH: get("pH"),
-    nPpm: get("nPpm"),
-    pPpm: get("pPpm"),
-    kPpm: get("kPpm"),
-    sPpm: get("sPpm"),
-    caPpm: get("caPpm"),
-    mgPpm: get("mgPpm"),
-    naPpm: get("naPpm"),
-    fePpm: get("fePpm"),
-    mnPpm: get("mnPpm"),
-    znPpm: get("znPpm"),
-    cuPpm: get("cuPpm"),
-    bPpm: get("bPpm"),
-    omPct: get("omPct"),
-    cecMeq100g: get("cecMeq100g"),
-    notes: get("notes"),
-  });
 }
 
 export async function createSoilTest(
   propertyId: string,
   areaId: string,
-  form: FormData,
+  values: SoilTestFormValues,
 ): Promise<ActionResult<{ id: string }>> {
   const user = await requireSessionUser();
   if (!(await canAccessArea(user.id, areaId, ROLE_CONTRIBUTOR))) {
     return { ok: false, error: "You don't have permission to add soil tests for this area." };
   }
-  const parsed = readForm(form);
+  const parsed = soilTestFormSchema.safeParse(values);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
@@ -119,7 +64,7 @@ export async function createSoilTest(
   // The new test becomes "current" for the area in the same transaction
   // so the area never points at a deleted/orphaned test.
   await prisma.$transaction(async (tx) => {
-    const test = await tx.soilTest.create({ data: { ...parsed.data, areaId } });
+    const test = await tx.soilTest.create({ data: dbWriteable(parsed.data, areaId) });
     await tx.area.update({ where: { id: areaId }, data: { currentSoilTestId: test.id } });
   });
 

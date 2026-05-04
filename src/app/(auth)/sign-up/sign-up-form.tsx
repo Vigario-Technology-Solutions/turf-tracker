@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
+import { Field } from "@/components/form/field";
 import { signUp } from "@/lib/auth/client";
 import { passwordSchema } from "@/lib/auth/password-policy";
 
@@ -90,33 +91,5 @@ export function SignUpForm() {
         {isSubmitting ? "Creating…" : "Create account"}
       </button>
     </form>
-  );
-}
-
-function Field({
-  label,
-  type = "text",
-  autoComplete,
-  registration,
-  error,
-}: {
-  label: string;
-  type?: string;
-  autoComplete?: string;
-  registration: ReturnType<ReturnType<typeof useForm<SignUpInput>>["register"]>;
-  error?: string;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-sm font-medium">{label}</span>
-      <input
-        type={type}
-        autoComplete={autoComplete}
-        {...registration}
-        aria-invalid={error ? "true" : undefined}
-        className="w-full rounded border border-neutral-300 px-2 py-2 text-sm focus:border-neutral-900 focus:outline-none aria-invalid:border-red-400"
-      />
-      {error && <p className="mt-1 text-xs text-red-700">{error}</p>}
-    </label>
   );
 }
