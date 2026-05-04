@@ -15,21 +15,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <div className="min-h-screen flex flex-col">
       <header className="border-b border-neutral-200 bg-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-          <div className="flex items-baseline gap-2">
-            <Link href="/" className="font-semibold">
-              Turf Tracker
-            </Link>
-            {process.env.APP_VERSION && (
-              <span
-                className="font-mono text-xs text-neutral-500"
-                title={`Running v${process.env.APP_VERSION}`}
-              >
-                v{process.env.APP_VERSION}
-              </span>
-            )}
-          </div>
+          <Link href="/" className="font-semibold">
+            Turf Tracker
+          </Link>
           <div className="flex items-center gap-3 text-sm">
-            <span className="text-neutral-600">{user.displayName ?? user.name ?? user.email}</span>
+            <Link href="/profile" className="text-neutral-600 hover:text-neutral-900">
+              {user.displayName ?? user.name ?? user.email}
+            </Link>
             <SignOutButton />
           </div>
         </div>
@@ -46,6 +38,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </nav>
       </header>
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6">{children}</main>
+      {process.env.APP_VERSION && (
+        <footer className="border-t border-neutral-200 py-3 text-center font-mono text-xs text-neutral-500">
+          v{process.env.APP_VERSION}
+        </footer>
+      )}
     </div>
   );
 }
