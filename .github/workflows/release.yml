@@ -183,17 +183,31 @@ jobs:
 
       - name: Build
         if: steps.version.outputs.skip != 'true'
-        # `npm run build` chains `prebuild` → `next build` → `serwist build`.
-        # `prebuild` runs `check:public-env` (fails the build if any
-        # NEXT_PUBLIC_* referenced in src/ is missing — Next would
-        # otherwise inline `undefined` and silently break features at
-        # runtime) followed by `build:seed` (esbuild-bundles
-        # prisma/seed/index.ts → bin/seed.js so prod's v2 standalone
-        # can run the seed via plain `node` without tsx) and `build:cli`
-        # (esbuild-bundles src/cli/index.ts → bin/turf.js + emits
-        # bin/cli-manifest.json with the introspected subcommand list).
-        # build:cli runs its own `--check` smoke test to catch cold-start
-        # import failures at build time.
+        # `npm run build` chains:
+        #   1. prebuild:
+        #        check:public-env  (fail if any NEXT_PUBLIC_* in src/ is unset
+        #                           at build time — Next would inline
+        #                           `undefined` and silently break features)
+        #        build:seed        (esbuild-bundles prisma/seed/index.ts
+        #                           → bin/seed.js + emits seed.trace.json)
+        #        build:cli         (esbuild-bundles src/cli/index.ts
+        #                           → bin/turf.js + bin/cli-manifest.json
+        #                           + bin/turf.trace.json. Runs its own
+        #                           --check source-tree smoke.)
+        #        build:server      (esbuild-bundles server.ts → bin/server.mjs
+        #                           + bin/server.trace.json. Runs its own
+        #                           --check source-tree smoke.)
+        #   2. next build && serwist build
+        #        next.config.ts reads each *.trace.json above and folds
+        #        them into outputFileTracingIncludes so the standalone
+        #        tar carries every off-tree bundle's runtime deps.
+        #   3. postbuild:
+        #        Copies bin/server.mjs → .next/standalone/server.mjs and
+        #        runs `node server.mjs --check` with cwd .next/standalone.
+        #        Catches the failure class where outputFileTracingIncludes
+        #        silently drops a transitive's package.json — that's what
+        #        tipped over vis-daily-tracker v2.80.0 with @sentry/nextjs.
+        #        Build fails before the tarball is published.
         run: npm run build
         env:
           # Better-Auth's library-level default-secret check fires during
@@ -257,11 +271,10 @@ jobs:
           # `prisma migrate deploy`.
           cp prisma.config.ts .next/standalone/prisma.config.ts
 
-          # Custom Next entrypoint — graceful SIGTERM/SIGINT handling
-          # (drain → prisma → sentry → exit 0). MANIFEST.startCommand
-          # points prod at this instead of the auto-generated server.js.
-          # See docs/deployment.md "Shutdown contract".
-          cp server.mjs .next/standalone/server.mjs
+          # Custom Next entrypoint (.next/standalone/server.mjs) was
+          # already placed there by `npm run build`'s `postbuild` hook
+          # (scripts/postbuild.ts copies bin/server.mjs and runs the
+          # standalone-tree --check smoke). Nothing to do here.
 
           # Pre-compiled seed (built earlier). Prod runs this via
           # MANIFEST.preStartCommands right after `prisma migrate

@@ -1,5 +1,5 @@
 /**
- * Build the prod CLI bundle + emit its companion manifest.
+ * Build the prod CLI bundle + emit its companion manifests.
  *
  * Outputs:
  *   bin/turf.js            — single-file ESM bundle of src/cli/index.ts.
@@ -10,8 +10,14 @@
  *                            into MANIFEST.cli so the deployed tar
  *                            advertises the subcommand surface the
  *                            binary actually registers (no manual list
- *                            to drift). Same approach as
- *                            vis-daily-tracker.
+ *                            to drift).
+ *   bin/turf.trace.json    — JSON array of node_modules paths the bundle
+ *                            needs at runtime, derived by walking
+ *                            turf.js's import graph with @vercel/nft.
+ *                            Read by next.config.ts and fed into
+ *                            outputFileTracingIncludes so the standalone
+ *                            tar carries the runtime deps. Same shape
+ *                            as build-seed.ts / build-server.ts.
  *
  * Native deps stay external — Node resolves them at runtime against
  * the standalone tar's node_modules. Same external list as
@@ -22,6 +28,7 @@
  * `require()` at runtime.
  */
 import { build } from "esbuild";
+import { nodeFileTrace } from "@vercel/nft";
 import { spawnSync } from "node:child_process";
 import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { createProgram } from "../src/cli/program";
@@ -29,6 +36,7 @@ import { createProgram } from "../src/cli/program";
 const outdir = "bin";
 const outfile = `${outdir}/turf.js`;
 const manifestPath = `${outdir}/cli-manifest.json`;
+const tracefile = `${outdir}/turf.trace.json`;
 
 await mkdir(outdir, { recursive: true });
 
@@ -65,6 +73,25 @@ await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
 process.stdout.write(
   `  ${manifestPath} (${subcommands.length} subcommand${subcommands.length === 1 ? "" : "s"})\n`,
 );
+
+// Trace turf.js's runtime deps and emit the manifest. Same pattern as
+// build-seed.ts / build-server.ts. The CLI's graph is a superset of
+// the seed's — it pulls in everything in src/cli/commands/** plus the
+// shared @/lib/auth + @/lib/db imports — so its trace is the larger
+// of the two.
+const { fileList, warnings } = await nodeFileTrace([outfile]);
+const traceManifest = [...fileList]
+  .map((p) => p.replace(/\\/g, "/"))
+  .filter((p) => p.startsWith("node_modules/"))
+  .sort();
+
+if (warnings.size > 0) {
+  console.warn(`[build-cli] nft warnings (${warnings.size}):`);
+  for (const w of warnings) console.warn(`  ${w.message}`);
+}
+
+await writeFile(tracefile, JSON.stringify(traceManifest, null, 2) + "\n");
+process.stdout.write(`  ${tracefile} (${traceManifest.length} runtime deps)\n`);
 
 // Smoke test: invoke the bundle with `--check`. The entry point exits
 // 0 after module-level imports resolve, before Commander touches argv
