@@ -189,7 +189,11 @@ jobs:
         # otherwise inline `undefined` and silently break features at
         # runtime) followed by `build:seed` (esbuild-bundles
         # prisma/seed/index.ts → bin/seed.js so prod's v2 standalone
-        # can run the seed via plain `node` without tsx).
+        # can run the seed via plain `node` without tsx) and `build:cli`
+        # (esbuild-bundles src/cli/index.ts → bin/turf.js + emits
+        # bin/cli-manifest.json with the introspected subcommand list).
+        # build:cli runs its own `--check` smoke test to catch cold-start
+        # import failures at build time.
         run: npm run build
         env:
           # Better-Auth's library-level default-secret check fires during
@@ -266,6 +270,14 @@ jobs:
           mkdir -p .next/standalone/bin
           cp bin/seed.js .next/standalone/bin/seed.js
 
+          # Pre-compiled CLI (built earlier). Operators invoke it as
+          # `node bin/turf.js <subcommand>` from the deployed release
+          # dir. cli-manifest.json carries the introspected subcommand
+          # list — folded into MANIFEST.cli below so the tar advertises
+          # what the binary actually registers.
+          cp bin/turf.js .next/standalone/bin/turf.js
+          cp bin/cli-manifest.json .next/standalone/bin/cli-manifest.json
+
           # .env.example shipped so the first-time deploy path can read
           # the required-env placeholder list without needing the repo.
           cp .env.example .next/standalone/.env.example
@@ -309,6 +321,9 @@ jobs:
           # file src/lib/runtime-config.ts imports for its presence
           # check, so what prod's MANIFEST advertises and what the app
           # validates at startup stay in lockstep.
+          # cli pulled from bin/cli-manifest.json (emitted by
+          # `npm run build:cli`) so the subcommand list stays auto-
+          # synced with what the binary actually registers.
           PRISMA_VERSION=$(node -p "require('./package.json').devDependencies.prisma")
           NODE_MAJOR=$(node -p "require('./package.json').engines.node.match(/\d+/)[0]")
           jq -n \
@@ -316,6 +331,7 @@ jobs:
             --arg prismaVersion "$PRISMA_VERSION" \
             --arg nodeMajor "$NODE_MAJOR" \
             --slurpfile requiredEnv src/lib/required-env.json \
+            --slurpfile cli bin/cli-manifest.json \
             '{
               schemaVersion: 2,
               tag: $tag,
@@ -336,7 +352,8 @@ jobs:
               nodeVersion: $nodeMajor,
               requiredTools: {
                 prisma: $prismaVersion
-              }
+              },
+              cli: $cli[0]
             }' \
             > .next/standalone/MANIFEST
 

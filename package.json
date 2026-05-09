@@ -8,6 +8,7 @@
   },
   "scripts": {
     "build": "next build && serwist build",
+    "build:cli": "tsx scripts/build-cli.ts",
     "build:seed": "tsx scripts/build-seed.ts",
     "check:public-env": "tsx --env-file-if-exists=.env scripts/check-public-env.ts",
     "db:migrate": "prisma migrate deploy",
@@ -21,7 +22,7 @@
     "lint:md": "markdownlint-cli2",
     "lint:md:fix": "markdownlint-cli2 --fix",
     "postinstall": "prisma generate",
-    "prebuild": "npm run check:public-env && npm run build:seed",
+    "prebuild": "npm run check:public-env && npm run build:seed && npm run build:cli",
     "prepare": "husky",
     "start": "next start",
     "test": "vitest run --passWithNoTests",
