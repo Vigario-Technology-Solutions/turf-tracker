@@ -1,4 +1,14 @@
 # Changelog
+## [0.4.0](https://github.com/TylerVigario/turf-tracker/compare/v0.3.0...v0.4.0) (2026-05-09)
+
+### Features
+
+* **cli:** Bundle for prod via esbuild + ship in standalone tar
+
+### Bug Fixes
+
+* **deploy:** Bundle server entry + trace off-tree bundles + standalone-tree smoke
+
 ## [0.3.0](https://github.com/TylerVigario/turf-tracker/compare/v0.2.0...v0.3.0) (2026-05-09)
 
 ### Features
