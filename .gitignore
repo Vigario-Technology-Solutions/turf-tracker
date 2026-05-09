@@ -13,6 +13,11 @@ data/
 .env.local
 .env.*.local
 
+# Sentry CLI / build plugin; contains a project-scoped auth token
+# created on demand when running `sentry-cli login` or the build
+# plugin's first source-map upload locally.
+.env.sentry-build-plugin
+
 # Next.js
 .next/
 out/

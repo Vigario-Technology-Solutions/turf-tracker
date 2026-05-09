@@ -1,4 +1,7 @@
-// Minimalist 6-type set inherited from vis-daily-tracker.
+// Minimalist 6-type set. The active type-enum is what commitlint
+// allows on new commits; cliff.toml has additional historical
+// parsers (perf/style/revert/build/ci) that map old commits into
+// these groups when regenerating the changelog.
 //
 // Bumping vs skipping:
 //   feat      → minor bump, "Features"

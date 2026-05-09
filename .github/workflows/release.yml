@@ -181,17 +181,15 @@ jobs:
         if: steps.version.outputs.skip != 'true'
         run: npm version ${{ steps.version.outputs.version }} --no-git-tag-version
 
-      - name: Build seed
-        if: steps.version.outputs.skip != 'true'
-        # Emits bin/seed.js — pre-compiled prisma/seed/index.ts so prod
-        # can run reference-data upserts via `node` alone (no tsx in
-        # the v2 standalone bundle). Paired with `prisma migrate deploy`
-        # in MANIFEST.preStartCommands so the seed always lands in lock-
-        # step with new lookup-table migrations.
-        run: npm run build:seed
-
       - name: Build
         if: steps.version.outputs.skip != 'true'
+        # `npm run build` chains `prebuild` → `next build` → `serwist build`.
+        # `prebuild` runs `check:public-env` (fails the build if any
+        # NEXT_PUBLIC_* referenced in src/ is missing — Next would
+        # otherwise inline `undefined` and silently break features at
+        # runtime) followed by `build:seed` (esbuild-bundles
+        # prisma/seed/index.ts → bin/seed.js so prod's v2 standalone
+        # can run the seed via plain `node` without tsx).
         run: npm run build
         env:
           # Better-Auth's library-level default-secret check fires during
@@ -206,6 +204,23 @@ jobs:
           # is environment-agnostic. Better-Auth emits a "Base URL could
           # not be determined" warning during build; harmless because the
           # real URL is set in prod's env at server start.
+          #
+          # Sentry — build-time only. NEXT_PUBLIC_SENTRY_DSN is inlined
+          # into the client bundle at build time (Next replaces
+          # `process.env.NEXT_PUBLIC_*` references with literals during
+          # the bundle pass). SENTRY_DSN here is harmless extra exposure
+          # to the build; the actual server-runtime read is from prod's
+          # env at start. SENTRY_ORG / SENTRY_PROJECT / SENTRY_AUTH_TOKEN
+          # are read by withSentryConfig to upload source maps so
+          # production stack traces resolve back to readable TS. Without
+          # these the build still succeeds but stack traces in Sentry
+          # stay minified. All optional — Sentry init is a no-op when
+          # DSNs are unset.
+          NEXT_PUBLIC_SENTRY_DSN: ${{ secrets.NEXT_PUBLIC_SENTRY_DSN }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
 
       - name: Package standalone
         if: steps.version.outputs.skip != 'true'
@@ -237,6 +252,12 @@ jobs:
           # to find the schema and resolve DATABASE_URL. Required by
           # `prisma migrate deploy`.
           cp prisma.config.ts .next/standalone/prisma.config.ts
+
+          # Custom Next entrypoint — graceful SIGTERM/SIGINT handling
+          # (drain → prisma → sentry → exit 0). MANIFEST.startCommand
+          # points prod at this instead of the auto-generated server.js.
+          # See docs/deployment.md "Shutdown contract".
+          cp server.mjs .next/standalone/server.mjs
 
           # Pre-compiled seed (built earlier). Prod runs this via
           # MANIFEST.preStartCommands right after `prisma migrate
@@ -298,7 +319,7 @@ jobs:
             '{
               schemaVersion: 2,
               tag: $tag,
-              startCommand: "node server.js",
+              startCommand: "node server.mjs",
               preStartCommands: ["prisma migrate deploy", "node bin/seed.js"],
               port: 3000,
               healthCheckPath: "/api/health",
@@ -309,7 +330,8 @@ jobs:
                 "SMTP_PORT",
                 "SMTP_FROM",
                 "SMTP_FROM_NAME",
-                "SMTP_REPLY_TO"
+                "SMTP_REPLY_TO",
+                "SENTRY_DSN"
               ],
               nodeVersion: $nodeMajor,
               requiredTools: {
