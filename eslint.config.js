@@ -37,16 +37,16 @@ const eslintConfig = defineConfig([
     "bin/**",
     "generated/**",
     "next-env.d.ts",
-    ".commitlintrc.mjs",
+    ".commitlintrc.js",
     "eslint.config.js",
     "postcss.config.js",
     "prisma.config.ts",
     "scripts/**",
     "public/sw.js",
     "public/workbox-*.js",
-    // server.mjs is the build:server output at the repo root (gitignored).
-    // Lint server.ts instead; the .mjs is a build artifact.
-    "server.mjs",
+    // server.js is the build:server output at the repo root (gitignored).
+    // Lint server.ts instead; the .js is a build artifact.
+    "server.js",
   ]),
 ]);
 

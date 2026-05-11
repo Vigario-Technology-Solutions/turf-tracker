@@ -40,7 +40,7 @@ contains:
 | `package.json` | `engines.node`, `scripts.start`, `scripts.build`, `dependencies` / `devDependencies` |
 | `package-lock.json` | Lockfile for deterministic `npm ci` |
 | `src/lib/required-env.json` | The required-env contract. Imported by `src/lib/runtime-config.ts` so deploy-time and runtime checks stay in lockstep. |
-| `server.mjs` | Custom entrypoint (after build). Graceful SIGTERM/SIGINT — in-flight drain, Prisma disconnect, Sentry flush, exit 0. |
+| `server.js` | Custom entrypoint (after build). Graceful SIGTERM/SIGINT — in-flight drain, Prisma disconnect, Sentry flush, exit 0. |
 | `prisma.config.ts` | Schema path and datasource URL config. Read by the `prisma` CLI from cwd. |
 | `prisma/schema.prisma` + `prisma/migrations/*` | Schema and migration SQL files. |
 | `bin/seed.js` (after build) | Pre-compiled seed runner. Idempotent upserts of all lookup data. |
@@ -59,7 +59,7 @@ scans `src/` for `process.env.NEXT_PUBLIC_*`, fails the build if any
 referenced var is missing from the build-time environment. Allowlist
 is currently `NEXT_PUBLIC_SENTRY_DSN` (warn-only when absent).
 
-**The postbuild smoke** spawns `node server.mjs` on a random loopback
+**The postbuild smoke** spawns `node server.js` on a random loopback
 port with a hermetic stub environment, waits up to 30 seconds for
 the port to bind, sends SIGTERM, asserts a clean exit-0 within a
 further 10-second budget.
@@ -88,7 +88,7 @@ the production-side pre-swap smoke.
 
 ## Start
 
-`npm start` invokes `node server.mjs`. The entrypoint binds `PORT`
+`npm start` invokes `node server.js`. The entrypoint binds `PORT`
 (default `3000`) on `HOSTNAME` (default `127.0.0.1`). The loopback
 default is safe-by-default: a deploy without an explicit `HOSTNAME`
 override is reachable only through the local reverse proxy.
@@ -183,7 +183,7 @@ touches a DB — does not contribute to this invariant.
 
 ## Shutdown contract
 
-`server.mjs` handles SIGTERM and SIGINT gracefully:
+`server.js` handles SIGTERM and SIGINT gracefully:
 
 1. `server.close()` + `server.closeIdleConnections()`.
 2. Drain in-flight HTTP with a 30-second hard cap (then `closeAllConnections()`).

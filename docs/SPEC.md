@@ -514,7 +514,7 @@ Three taps from app open to confirmed log. Math + warnings done. This is the val
 
 ### 8.4 Deployment posture
 
-**Build-on-prod, standardized on vis-daily-tracker's contract.** Production clones the tagged commit, runs `npm ci && npm run build`, and runs the resulting bundle via `npm start` (= `node server.mjs`). No CI-built tarballs, no `MANIFEST`/`BUILD_INFO`/`SHA256SUMS` handshake — the tagged source IS the artifact.
+**Build-on-prod, standardized on vis-daily-tracker's contract.** Production clones the tagged commit, runs `npm ci && npm run build`, and runs the resulting bundle via `npm start` (= `node server.js`). No CI-built tarballs, no `MANIFEST`/`BUILD_INFO`/`SHA256SUMS` handshake — the tagged source IS the artifact.
 
 Full source-side contract: [`docs/deployment.md`](deployment.md). That's the spec the production deploy script consumes. The canonical rationale for any section there is in [`vis-daily-tracker/docs/deployment.md`](../../vis-daily-tracker/docs/deployment.md) — turf-tracker mirrors its structure and only the values differ. This section captures the high-level posture; detail lives in the linked docs.
 
@@ -532,13 +532,13 @@ Full source-side contract: [`docs/deployment.md`](deployment.md). That's the spe
 
 **`/api/health`** — `200 {"status":"ok"}` when the DB is reachable, `503` when not. Schema-agnostic (`SELECT 1`). Required for the migration backward-compat invariant: new code must boot against the previous release's schema, enforced by the prod-side pre-swap smoke.
 
-**Shutdown contract** — `server.mjs` traps SIGTERM/SIGINT: drain in-flight HTTP (30s cap), disconnect Prisma, flush Sentry, `process.exit(0)`. systemd's `KillSignal=SIGTERM` and `TimeoutStopSec=90s` are both correct for this contract. Clean exit-0 means `OnFailure=systemd-failure-notify` stays diagnostic-only.
+**Shutdown contract** — `server.js` traps SIGTERM/SIGINT: drain in-flight HTTP (30s cap), disconnect Prisma, flush Sentry, `process.exit(0)`. systemd's `KillSignal=SIGTERM` and `TimeoutStopSec=90s` are both correct for this contract. Clean exit-0 means `OnFailure=systemd-failure-notify` stays diagnostic-only.
 
 **Build pipeline** (`npm run build`):
 
 1. Prebuild: `check:public-env` → `build:seed` → `build:cli` → `build:server`. Strict — fails on missing `NEXT_PUBLIC_*` referenced in `src/`.
 2. `next build && serwist build`.
-3. Postbuild: real-boot smoke. Spawns `node server.mjs` on a random loopback port with hermetic stub env (`DATABASE_URL` forced to the RFC 6761 `.invalid` TLD, `SENTRY_DSN` empty, `NODE_ENV=production`), waits for bind, SIGTERM, asserts clean exit-0 within 10s. Catches everything the static `--check` doesn't (module resolution failures, listen succeeding, shutdown handler bugs).
+3. Postbuild: real-boot smoke. Spawns `node server.js` on a random loopback port with hermetic stub env (`DATABASE_URL` forced to the RFC 6761 `.invalid` TLD, `SENTRY_DSN` empty, `NODE_ENV=production`), waits for bind, SIGTERM, asserts clean exit-0 within 10s. Catches everything the static `--check` doesn't (module resolution failures, listen succeeding, shutdown handler bugs).
 
 **Phased deployment reality:**
 

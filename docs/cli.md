@@ -19,7 +19,7 @@ Run via `tsx` during local development. Never invoked on prod.
 | Script | Purpose |
 | --- | --- |
 | `check-public-env.ts` | Build-time check that every required `NEXT_PUBLIC_*` referenced in `src/` is set. Wired into `prebuild`. |
-| `postbuild.ts` | Real-boot smoke against the just-built `server.mjs` with hermetic stub env. Wired into `postbuild`. |
+| `postbuild.ts` | Real-boot smoke against the just-built `server.js` with hermetic stub env. Wired into `postbuild`. |
 
 ### Build pipeline — [`scripts/`](../scripts/) (output ships in tar)
 
@@ -31,7 +31,7 @@ time.
 | --- | --- | --- |
 | `build-seed.ts` | `bin/seed.js` | `prebuild` |
 | `build-cli.ts` | `bin/turf.js` + `bin/cli-manifest.json` | `prebuild` |
-| `build-server.ts` | `server.mjs` (at repo root) | `prebuild` |
+| `build-server.ts` | `server.js` (at repo root) | `prebuild` |
 
 ### Prod ops — [`src/cli/commands/`](../src/cli/commands/)
 

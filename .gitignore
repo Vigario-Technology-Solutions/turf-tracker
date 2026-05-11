@@ -26,8 +26,9 @@ out/
 dist/
 build/
 bin/
-# server.mjs is the build:server output at the repo root.
-server.mjs
+# server.js at repo root is the build:server output. server.ts is the
+# source; the .js is regenerated from it on every npm run build.
+/server.js
 
 # IDE
 .vscode/

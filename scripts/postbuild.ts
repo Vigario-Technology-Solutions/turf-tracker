@@ -1,7 +1,7 @@
 /**
- * Post-`next build` real-boot smoke against the just-built server.mjs.
+ * Post-`next build` real-boot smoke against the just-built server.js.
  *
- * Spawns `node server.mjs` from the repo root with hermetic stub env,
+ * Spawns `node server.js` from the repo root with hermetic stub env,
  * waits up to 30 seconds for the port to bind, sends SIGTERM, asserts
  * clean exit-0 within a further 10-second budget. Fails the build on:
  * doesn't bind, exits non-zero, doesn't exit at all.
@@ -53,12 +53,12 @@ const env: Record<string, string | undefined> = {
   NODE_ENV: "production",
 };
 
-console.log(`  spawning node server.mjs on :${port}`);
+console.log(`  spawning node server.js on :${port}`);
 const spawnOpts: SpawnOptions = {
   env: env as NodeJS.ProcessEnv,
   stdio: ["ignore", "pipe", "pipe"],
 };
-const proc = spawn(process.execPath, ["server.mjs"], spawnOpts);
+const proc = spawn(process.execPath, ["server.js"], spawnOpts);
 
 const stdoutChunks: string[] = [];
 const stderrChunks: string[] = [];
@@ -99,7 +99,7 @@ try {
 }
 
 // SIGTERM + clean exit-0 within the shutdown budget. The 30s drain
-// cap in server.mjs is the in-flight ceiling, but with no in-flight
+// cap in server.js is the in-flight ceiling, but with no in-flight
 // requests shutdown completes well under a second. The 10s budget is
 // generous margin without masking a hung handler. Failures here catch
 // shutdown-handler bugs (uncaught throw → non-zero exit, deadlocked

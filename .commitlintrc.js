@@ -28,7 +28,16 @@ export default {
 
     "body-leading-blank": [2, "always"],
     "body-max-line-length": [0],
-    "footer-leading-blank": [2, "always"],
+    // Disabled: conventional-commits-parser greedy-detects any
+    // line-start `Word:` in the body as a trailer boundary, so
+    // natural prose ("Why:", "What landed:", etc.) false-fires the
+    // rule. The rule's real protection (catching a missing blank
+    // before Co-Authored-By:) is ~zero in practice because every
+    // HEREDOC template includes the blank and trailers parse
+    // leniently anyway. There's no parser-level escape — every
+    // commitlint preset uses conventional-commits-parser under the
+    // hood. Reconsider if a hand-typing collaborator joins.
+    "footer-leading-blank": [0],
     "footer-max-line-length": [0],
   },
 };

@@ -89,7 +89,7 @@ npm install                       # First-time setup (also runs prisma generate)
 npm run dev                       # Next.js dev server
 npm run dev:server                # tsx server.ts — runs the custom entry for local prod-mimic
 npm run build                     # prebuild (check:public-env + build:seed/cli/server) → next build → serwist build → postbuild real-boot smoke
-npm run start                     # node server.mjs (requires npm run build first)
+npm run start                     # node server.js (requires npm run build first)
 npm run typecheck                 # tsc --noEmit
 npm run lint:js                   # ESLint
 npm run lint:js:fix               # ESLint with --fix
@@ -98,7 +98,7 @@ npm run format:fix                # Prettier --write
 npm run db:migrate                # prisma migrate deploy
 npm run db:seed                   # node bin/seed.js — bundled, prune-safe (requires build:seed first)
 npm run ci                        # lint + typecheck + format + test (gate parity)
-npm run clean                     # wipe .next, bin, server.mjs, caches
+npm run clean                     # wipe .next, bin, server.js, caches
 npm test                          # Vitest run
 ```
 

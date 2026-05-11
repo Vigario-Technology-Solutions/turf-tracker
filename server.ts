@@ -1,8 +1,8 @@
 /**
  * Custom server entrypoint.
  *
- * Compiled by scripts/build-server.ts via esbuild → server.mjs at
- * the repo root. `npm start` (= `node server.mjs`) is what invokes it.
+ * Compiled by scripts/build-server.ts via esbuild → server.js at
+ * the repo root. `npm start` (= `node server.js`) is what invokes it.
  *
  * Why a custom entrypoint instead of `next start`:
  * graceful SIGTERM/SIGINT handling — drains in-flight HTTP requests,
