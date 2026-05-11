@@ -1,67 +1,58 @@
-name: Release
+name: CI
 
 env:
   HUSKY: 0
   CI: true
-  # Pinned to match prod (Fedora 43, Node v24.15.0). See package.json
-  # `engines.node` for the rationale.
+  # Pinned to match prod (Fedora-class Linux, Node v24.15.0). See
+  # package.json `engines.node` for the rationale.
   NODE_VERSION: "24"
 
 on:
+  push:
+    branches: [main]
+  pull_request:
   workflow_dispatch:
     inputs:
       bump:
-        description: "Version bump (leave empty to auto-detect from commits)"
+        description: "Version bump for release (leave empty to auto-detect from commits)"
         required: false
         type: choice
         options: ["", "major", "minor", "patch"]
         default: ""
 
+# Concurrency: PRs cancel prior runs of the same PR (saves CI time on
+# rapid pushes), main pushes and dispatch runs queue serially (don't
+# cancel — every commit on main matters, every dispatch is a release
+# attempt).
 concurrency:
-  group: release
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Default to read-only. The release job escalates per-job.
+permissions:
+  contents: read
 
 jobs:
   # =========================================================================
-  # Gate — every quality check that should block a release. Tests, lint,
-  # typecheck. Solo-dev + main-only means there's no separate "CI on push"
-  # job; this gate is the single backstop for "did I forget to test before
-  # tagging."
+  # Gate — quality checks + full-build validation. Runs on every PR, every
+  # push to main, and at the start of every release attempt. Under the
+  # build-on-prod contract there's no CI-built artifact to ship; production
+  # rebuilds from the tagged commit. The gate's job is to make sure the
+  # commit builds cleanly before it can ever become a tag. Failing here is
+  # cheap; failing on the prod box during deploy is not.
   # =========================================================================
   gate:
     name: Gate
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-    env:
-      TEST_ADMIN_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
-      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/turf_tracker_test
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v6
       - name: Verify Node major pins agree
         # NODE_VERSION env (this workflow), .nvmrc, and package.json
-        # engines.node must all declare the same Node major.
-        # MANIFEST.nodeVersion is sourced from engines.node and
-        # BUILD_INFO.nodeVersion records the runner's actual node
-        # (driven by NODE_VERSION env via setup-node) — drift between
-        # the two would ship an artifact whose contract claims one
-        # major and whose runtime built it on another.
+        # engines.node must all declare the same Node major. The
+        # production host pins to the same major. Drift here would let
+        # CI green-light a build that prod can't run.
         run: |
           NVMRC_MAJOR=$(sed -E 's/^[^0-9]*([0-9]+).*/\1/' .nvmrc)
           ENGINES_MAJOR=$(node -p "require('./package.json').engines.node.match(/\d+/)[0]")
@@ -74,13 +65,13 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
-      # Cache key derived from package.json's deps fields ONLY, not
-      # the full lockfile. The Release workflow rewrites
-      # package-lock.json's root `version` on every run, so a key
-      # based on `hashFiles('**/package-lock.json')` (what setup-node's
+      # Cache key derived from package.json's deps fields ONLY, not the
+      # full lockfile. The release path rewrites package-lock.json's root
+      # `version` on every run, so a key based on
+      # `hashFiles('**/package-lock.json')` (what setup-node's
       # `cache: "npm"` shorthand uses) rotates every release and
-      # accumulates stale caches. Hashing only the deps subtree means
-      # the key is stable until you actually change a dep.
+      # accumulates one stale cache per run. Hashing only the deps subtree
+      # means the key is stable until you actually change a dep.
       - name: Compute npm cache key
         id: cache-key
         run: |
@@ -97,18 +88,48 @@ jobs:
       - run: npm run lint
       - run: npm run format
       - run: npm test
+      - name: Validate build
+        # The build-on-prod contract makes the build the production
+        # path: prod re-runs `npm run build` on each deploy. A broken
+        # build at the tagged commit means a broken deploy, so the
+        # gate has to catch it here. Build outputs are discarded —
+        # they're not the artifact, the tagged source is.
+        #
+        # NEXT_PUBLIC_* values are baked into the client bundle by next
+        # build; their absence at build time silently degrades the
+        # client (caught by check:public-env, which fails the build
+        # loudly if any required NEXT_PUBLIC_* is empty).
+        #
+        # Sentry sourcemap upload secrets (SENTRY_AUTH_TOKEN / _ORG /
+        # _PROJECT) are deliberately NOT set in the gate. Under the
+        # build-on-prod contract, sourcemap upload happens when prod
+        # builds the release for deploy, with prod's credentials.
+        # Setting them here would (a) upload phantom releases on every
+        # PR, (b) duplicate the upload prod will do anyway. The Sentry
+        # plugin warns when these are absent but doesn't fail the build.
+        run: npm run build
+        env:
+          # Better-Auth's library-level default-secret check fires
+          # during `next build` (NODE_ENV=production triggers it). The
+          # build never reads BETTER_AUTH_SECRET at runtime; this just
+          # satisfies the module-load assertion.
+          BETTER_AUTH_SECRET: ci-build-placeholder-not-used-at-runtime
+          NEXT_PUBLIC_SENTRY_DSN: ${{ secrets.NEXT_PUBLIC_SENTRY_DSN }}
 
   # =========================================================================
-  # Release — depends on gate. Bumps version, builds the standalone tar,
-  # tags + pushes, creates the GH Release with the artifact attached.
-  # The artifact at this point is what prod will swap to on the
-  # `release.published` webhook.
+  # Release — bumps version, generates changelog, tags, creates the GitHub
+  # Release. Only runs on workflow_dispatch; the gate is the sole entry
+  # point for PR / push validation. The production deploy listens for
+  # `release.published` and pulls the tagged commit; the Release itself
+  # carries no asset under the build-on-prod contract (the source repo +
+  # tag IS the deliverable).
   # =========================================================================
   release:
     name: Release
     needs: gate
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     permissions:
       contents: write
 
@@ -122,22 +143,6 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
-
-      # See the Gate job for the rationale on hashing deps-only.
-      - name: Compute npm cache key
-        id: cache-key
-        run: |
-          HASH=$(jq -S '{dependencies,devDependencies,optionalDependencies,peerDependencies}' package.json | sha256sum | cut -c1-16)
-          echo "key=npm-${{ runner.os }}-node${{ env.NODE_VERSION }}-${HASH}" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: ${{ steps.cache-key.outputs.key }}
-          restore-keys: |
-            npm-${{ runner.os }}-node${{ env.NODE_VERSION }}-
-
-      - name: Install dependencies
-        run: npm ci --prefer-offline
 
       - name: Install git-cliff
         uses: taiki-e/install-action@v2
@@ -181,203 +186,6 @@ jobs:
         if: steps.version.outputs.skip != 'true'
         run: npm version ${{ steps.version.outputs.version }} --no-git-tag-version
 
-      - name: Build
-        if: steps.version.outputs.skip != 'true'
-        # `npm run build` chains:
-        #   1. prebuild:
-        #        check:public-env  (fail if any NEXT_PUBLIC_* in src/ is unset
-        #                           at build time — Next would inline
-        #                           `undefined` and silently break features)
-        #        build:seed        (esbuild-bundles prisma/seed/index.ts
-        #                           → bin/seed.js + emits seed.trace.json)
-        #        build:cli         (esbuild-bundles src/cli/index.ts
-        #                           → bin/turf.js + bin/cli-manifest.json
-        #                           + bin/turf.trace.json. Runs its own
-        #                           --check source-tree smoke.)
-        #        build:server      (esbuild-bundles server.ts → bin/server.mjs
-        #                           + bin/server.trace.json. Runs its own
-        #                           --check source-tree smoke.)
-        #   2. next build && serwist build
-        #        next.config.ts reads each *.trace.json above and folds
-        #        them into outputFileTracingIncludes so the standalone
-        #        tar carries every off-tree bundle's runtime deps.
-        #   3. postbuild:
-        #        Copies bin/server.mjs → .next/standalone/server.mjs and
-        #        runs `node server.mjs --check` with cwd .next/standalone.
-        #        Catches the failure class where outputFileTracingIncludes
-        #        silently drops a transitive's package.json — that's what
-        #        tipped over vis-daily-tracker v2.80.0 with @sentry/nextjs.
-        #        Build fails before the tarball is published.
-        run: npm run build
-        env:
-          # Better-Auth's library-level default-secret check fires during
-          # `next build` (NODE_ENV=production triggers it). The bundle
-          # itself reads BETTER_AUTH_SECRET from process.env at runtime,
-          # so this build-time value is just to satisfy the library's
-          # module-load assertion. Real runtime secret comes from the
-          # prod server's env, not from the bundled artifact.
-          BETTER_AUTH_SECRET: release-build-placeholder-not-used-at-runtime
-          # BETTER_AUTH_URL is intentionally NOT set at build time — every
-          # call site reads it from process.env at runtime, so the bundle
-          # is environment-agnostic. Better-Auth emits a "Base URL could
-          # not be determined" warning during build; harmless because the
-          # real URL is set in prod's env at server start.
-          #
-          # Sentry — build-time only. NEXT_PUBLIC_SENTRY_DSN is inlined
-          # into the client bundle at build time (Next replaces
-          # `process.env.NEXT_PUBLIC_*` references with literals during
-          # the bundle pass). SENTRY_DSN here is harmless extra exposure
-          # to the build; the actual server-runtime read is from prod's
-          # env at start. SENTRY_ORG / SENTRY_PROJECT / SENTRY_AUTH_TOKEN
-          # are read by withSentryConfig to upload source maps so
-          # production stack traces resolve back to readable TS. Without
-          # these the build still succeeds but stack traces in Sentry
-          # stay minified. All optional — Sentry init is a no-op when
-          # DSNs are unset.
-          NEXT_PUBLIC_SENTRY_DSN: ${{ secrets.NEXT_PUBLIC_SENTRY_DSN }}
-          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
-          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
-          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-
-      - name: Package standalone
-        if: steps.version.outputs.skip != 'true'
-        run: |
-          # Merge required runtime files into the standalone bundle.
-          # The tar must be self-contained so prod can swap to it
-          # without any further `npm install`.
-          #
-          # `cp -rT` (treat dest as a file, not a dir to nest into) so
-          # this works whether the target already exists or not. Next 16
-          # pre-creates .next/standalone/public/ during `next build`;
-          # without -T, the source public/ would nest as
-          # .next/standalone/public/public/, hiding serwist's sw.js
-          # (written to source public/ AFTER next build) from the
-          # tarball root. Same defensive treatment for .next/static.
-          cp -rT public .next/standalone/public
-          cp -rT .next/static .next/standalone/.next/static
-
-          # Schema + migration files + generated Prisma client. Prod's
-          # globally-installed prisma reads these to apply migrations
-          # via the v2 contract's `prisma migrate deploy` preStartCommand.
-          # The prisma CLI itself is NOT shipped — see docs/deployment.md
-          # for rationale.
-          mkdir -p .next/standalone/generated
-          cp -r generated/prisma .next/standalone/generated/
-          cp -r prisma .next/standalone/prisma
-
-          # prisma.config.ts at tar root — Prisma v7+ reads it from cwd
-          # to find the schema and resolve DATABASE_URL. Required by
-          # `prisma migrate deploy`.
-          cp prisma.config.ts .next/standalone/prisma.config.ts
-
-          # Custom Next entrypoint (.next/standalone/server.mjs) was
-          # already placed there by `npm run build`'s `postbuild` hook
-          # (scripts/postbuild.ts copies bin/server.mjs and runs the
-          # standalone-tree --check smoke). Nothing to do here.
-
-          # Pre-compiled seed (built earlier). Prod runs this via
-          # MANIFEST.preStartCommands right after `prisma migrate
-          # deploy` so reference-table upserts always land alongside
-          # the schema change that introduced them.
-          mkdir -p .next/standalone/bin
-          cp bin/seed.js .next/standalone/bin/seed.js
-
-          # Pre-compiled CLI (built earlier). Operators invoke it as
-          # `node bin/turf.js <subcommand>` from the deployed release
-          # dir. cli-manifest.json carries the introspected subcommand
-          # list — folded into MANIFEST.cli below so the tar advertises
-          # what the binary actually registers.
-          cp bin/turf.js .next/standalone/bin/turf.js
-          cp bin/cli-manifest.json .next/standalone/bin/cli-manifest.json
-
-          # .env.example shipped so the first-time deploy path can read
-          # the required-env placeholder list without needing the repo.
-          cp .env.example .next/standalone/.env.example
-
-          # BUILD_INFO so prod can verify Node + glibc + arch match
-          # before swap. os/arch/glibcVersion turn the "forward-compatible
-          # family" assumption (Ubuntu 24.04 → Fedora 43) into a
-          # checkable invariant — prod refuses to swap if its glibc is
-          # older than what built the artifact. Built via jq to avoid
-          # YAML-heredoc indentation leaking into the JSON.
-          jq -n \
-            --arg tag "${{ steps.version.outputs.tag }}" \
-            --arg commit "$(git rev-parse HEAD)" \
-            --arg buildTime "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --arg nodeVersion "$(node --version)" \
-            --arg os "$(. /etc/os-release && echo "$ID-$VERSION_ID")" \
-            --arg arch "$(uname -m)" \
-            --arg glibcVersion "$(ldd --version | head -1 | awk '{print $NF}')" \
-            --arg assetName "turf-tracker-${{ steps.version.outputs.tag }}.tar.gz" \
-            '{tag: $tag, commit: $commit, buildTime: $buildTime, nodeVersion: $nodeVersion, os: $os, arch: $arch, glibcVersion: $glibcVersion, assetName: $assetName}' \
-            > .next/standalone/BUILD_INFO
-
-          # MANIFEST — declarative deploy contract. Prod reads this
-          # to know how to start the bundle, what env it requires,
-          # and which pre-start commands to run. Decouples the source
-          # repo from prod's deploy script — bumping the start command
-          # or required env happens here, not by editing prod's
-          # systemd unit. schemaVersion lets prod refuse unknown
-          # versions instead of guessing.
-          # schemaVersion 2: preStartCommands uses prod's PATH-resolved
-          # prisma (not a bundled binary). requiredTools declares what
-          # prod must have installed for preStartCommands to succeed.
-          #
-          # prismaVersion pinned to root package.json's prisma version
-          # so source intent is explicit; prod's preflight does
-          # major-match comparison.
-          # nodeVersion extracted from package.json engines.node — the
-          # bare major digit per the contract. Same source as .nvmrc /
-          # NODE_VERSION env above.
-          # requiredEnv read from src/lib/required-env.json — the same
-          # file src/lib/runtime-config.ts imports for its presence
-          # check, so what prod's MANIFEST advertises and what the app
-          # validates at startup stay in lockstep.
-          # cli pulled from bin/cli-manifest.json (emitted by
-          # `npm run build:cli`) so the subcommand list stays auto-
-          # synced with what the binary actually registers.
-          PRISMA_VERSION=$(node -p "require('./package.json').devDependencies.prisma")
-          NODE_MAJOR=$(node -p "require('./package.json').engines.node.match(/\d+/)[0]")
-          jq -n \
-            --arg tag "${{ steps.version.outputs.tag }}" \
-            --arg prismaVersion "$PRISMA_VERSION" \
-            --arg nodeMajor "$NODE_MAJOR" \
-            --slurpfile requiredEnv src/lib/required-env.json \
-            --slurpfile cli bin/cli-manifest.json \
-            '{
-              schemaVersion: 2,
-              tag: $tag,
-              startCommand: "node server.mjs",
-              preStartCommands: ["prisma migrate deploy", "node bin/seed.js"],
-              port: 3000,
-              healthCheckPath: "/api/health",
-              requiredEnv: $requiredEnv[0],
-              optionalEnv: [
-                "CIMIS_API_KEY",
-                "SMTP_HOST",
-                "SMTP_PORT",
-                "SMTP_FROM",
-                "SMTP_FROM_NAME",
-                "SMTP_REPLY_TO",
-                "SENTRY_DSN"
-              ],
-              nodeVersion: $nodeMajor,
-              requiredTools: {
-                prisma: $prismaVersion
-              },
-              cli: $cli[0]
-            }' \
-            > .next/standalone/MANIFEST
-
-          tar -czf turf-tracker-${{ steps.version.outputs.tag }}.tar.gz -C .next/standalone .
-
-      - name: Compute SHA256SUMS
-        if: steps.version.outputs.skip != 'true'
-        run: |
-          sha256sum turf-tracker-${{ steps.version.outputs.tag }}.tar.gz > SHA256SUMS
-          cat SHA256SUMS
-
       - name: Generate changelog
         if: steps.version.outputs.skip != 'true'
         run: |
@@ -393,11 +201,13 @@ jobs:
           git tag ${{ steps.version.outputs.tag }}
           git push origin main --follow-tags
 
-      # Two-step publish: create as draft with all assets attached,
-      # then flip to published. Guarantees the `release.published`
-      # webhook only fires once both files are uploaded — prevents the
-      # race where prod fetches before SHA256SUMS lands.
-      - name: Create GitHub Release (draft)
+      # Single-step publish under build-on-prod — no asset upload, no
+      # SHA256SUMS, no draft → published dance. The Release exists
+      # purely as the trigger surface for production's deploy webhook
+      # (`release.published`), with the changelog as the body. The
+      # tagged commit IS the artifact; production's deploy script
+      # `git fetch && git checkout ${tag}` to pick it up.
+      - name: Create GitHub Release
         if: steps.version.outputs.skip != 'true'
         uses: softprops/action-gh-release@v3
         with:
@@ -405,16 +215,6 @@ jobs:
           tag_name: ${{ steps.version.outputs.tag }}
           name: ${{ steps.version.outputs.tag }}
           body_path: RELEASE_NOTES.md
-          draft: true
-          files: |
-            turf-tracker-${{ steps.version.outputs.tag }}.tar.gz
-            SHA256SUMS
-
-      - name: Publish Release
-        if: steps.version.outputs.skip != 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit ${{ steps.version.outputs.tag }} --draft=false
 
       - name: Generate job summary
         if: always()

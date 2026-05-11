@@ -44,6 +44,9 @@ const eslintConfig = defineConfig([
     "scripts/**",
     "public/sw.js",
     "public/workbox-*.js",
+    // server.mjs is the build:server output at the repo root (gitignored).
+    // Lint server.ts instead; the .mjs is a build artifact.
+    "server.mjs",
   ]),
 ]);
 

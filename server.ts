@@ -1,36 +1,40 @@
 /**
- * Custom entrypoint for the standalone Next.js server.
+ * Custom server entrypoint.
  *
- * Compiled by scripts/build-server.ts via esbuild → bin/server.mjs,
- * then copied to .next/standalone/server.mjs by scripts/postbuild.ts
- * (the tarball-root path that MANIFEST.startCommand targets).
+ * Compiled by scripts/build-server.ts via esbuild → server.mjs at
+ * the repo root. `npm start` (= `node server.mjs`) is what invokes it.
  *
- * Replaces direct invocation of the auto-generated `server.js` to give
- * us SIGTERM/SIGINT graceful shutdown — drains in-flight requests,
- * disconnects Prisma, flushes Sentry, exits 0 instead of dying 143
- * mid-response (which made every deploy trip systemd's failure
- * notifier). See docs/SPEC.md §8.4.
+ * Why a custom entrypoint instead of `next start`:
+ * graceful SIGTERM/SIGINT handling — drains in-flight HTTP requests,
+ * disconnects Prisma, flushes Sentry, exits 0. systemd's
+ * `systemctl stop` gets a clean exit code so
+ * `OnFailure=systemd-failure-notify` stays diagnostic-only. See
+ * docs/deployment.md "Shutdown contract".
  *
- * Compiled-from-TypeScript so it can share `@/lib/...` imports with
- * the Next app at compile time without a parallel implementation.
- * Same pattern as bin/seed.js / bin/turf.js.
+ * Uses the documented Next custom-server API:
+ * `next({...}) + app.prepare() + http.createServer(handle)`. Works
+ * because the build-on-prod model ships full production deps —
+ * `loadConfig`'s dynamic require of `next/dist/compiled/webpack/*`
+ * resolves cleanly. The earlier wrap-shape (one-shot
+ * http.createServer patch + dynamic import("./server.js")) existed
+ * to dodge that path under output:"standalone" and is unnecessary
+ * once we're not running standalone — also broken in transpilation
+ * (esbuild collapsed the literal dynamic import to a self-reference).
  */
 
-import { createServer, type Server } from "node:http";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import next from "next";
-import * as Sentry from "@sentry/nextjs";
+import http, { type Server } from "node:http";
+import Sentry from "@sentry/nextjs";
+import prisma from "@/lib/db";
 
-// --check escape hatch — used by scripts/build-server.ts (source-tree
-// smoke) and scripts/postbuild.ts (standalone-tree smoke) to verify
-// module-level imports resolve without starting the server. Must come
-// after imports (ESM hoisting) but before any side-effecting setup.
+// --check escape hatch: exits before app.prepare() so the build:server
+// --check smoke can validate module-level imports without booting Next.
+// scripts/postbuild.ts spawns a real boot; build-server.ts's --check is
+// the cheap pre-check.
 //
-// The standalone-tree --check is the load-bearing one: it catches the
-// failure class where outputFileTracingIncludes silently drops a
-// transitive dep's package.json. Source-tree --check can't see that
-// because the source repo's node_modules is always complete.
+// NB: --check exits before any of the code paths that have killed prior
+// releases run. The real-boot postbuild smoke is what catches the
+// listen/shutdown classes.
 if (process.argv.includes("--check")) {
   process.exit(0);
 }
@@ -38,13 +42,39 @@ if (process.argv.includes("--check")) {
 const DRAIN_TIMEOUT_MS = 30_000;
 const SENTRY_FLUSH_TIMEOUT_MS = 2_000;
 
+// Default to loopback. Production overrides HOSTNAME=0.0.0.0 in its
+// env file to expose the service. A deploy that comes up without the
+// override is reachable only through the local reverse proxy, never
+// the LAN/WAN. See docs/deployment.md.
+const port = parseInt(process.env.PORT ?? "", 10) || 3000;
+const hostname = process.env.HOSTNAME ?? "127.0.0.1";
+
 const log = (msg: string): void => {
   console.error(`[shutdown] ${msg}`);
 };
 
-let httpServer: Server | null = null;
-let listening = false;
+// ============================================================
+// Bootstrap
+// ============================================================
+
+const app = next({ dev: false, hostname, port });
+const handle = app.getRequestHandler();
+await app.prepare();
+
+const httpServer: Server = http.createServer((req, res) => {
+  void handle(req, res);
+});
+
+httpServer.on("error", (err) => {
+  console.error("[server] error:", err);
+  process.exit(1);
+});
+
 let shuttingDown = false;
+
+// ============================================================
+// Shutdown
+// ============================================================
 
 async function shutdown(signal: NodeJS.Signals): Promise<void> {
   if (shuttingDown) {
@@ -54,20 +84,19 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   shuttingDown = true;
   log(`${signal} received: drain → prisma → sentry → exit`);
 
-  if (httpServer && listening) {
-    const server = httpServer;
-    server.closeIdleConnections();
+  if (httpServer.listening) {
+    httpServer.closeIdleConnections();
     log("closed idle keep-alive connections");
 
     await new Promise<void>((resolve) => {
       const cap = setTimeout(() => {
         log(`drain hit ${DRAIN_TIMEOUT_MS / 1000}s cap; force-closing in-flight connections`);
-        server.closeAllConnections();
+        httpServer.closeAllConnections();
         resolve();
       }, DRAIN_TIMEOUT_MS);
       cap.unref();
 
-      server.close((err) => {
+      httpServer.close((err) => {
         clearTimeout(cap);
         if (err) log(`server.close error: ${err.message}`);
         else log("in-flight requests drained");
@@ -75,21 +104,12 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
       });
     });
   } else {
-    log("http server not yet listening; skip drain");
+    log("http server not listening; skip drain");
   }
 
   try {
-    // src/lib/db.ts unconditionally registers the singleton on globalThis
-    // (no NODE_ENV guard, unlike the typical Next+Prisma dev-only pattern),
-    // so this lookup hits a real prod client once any DB-touching route ran.
-    const g = globalThis as { prisma?: { $disconnect: () => Promise<void> } };
-    const prisma = g.prisma;
-    if (prisma && typeof prisma.$disconnect === "function") {
-      await prisma.$disconnect();
-      log("prisma disconnected");
-    } else {
-      log("no prisma client in globalThis; skip");
-    }
+    await prisma.$disconnect();
+    log("prisma disconnected");
   } catch (err) {
     log(`prisma.$disconnect error: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -116,28 +136,10 @@ process.on("SIGINT", () => {
   });
 });
 
-const dir = path.dirname(fileURLToPath(import.meta.url));
-process.chdir(dir);
-// Mirrors the defensive set in the auto-generated standalone server.js.
-// process.env.NODE_ENV is typed readonly by Next's ambient declarations,
-// hence the cast.
-(process.env as Record<string, string | undefined>).NODE_ENV = "production";
+// ============================================================
+// Listen
+// ============================================================
 
-const port = parseInt(process.env.PORT ?? "", 10) || 3000;
-const hostname = process.env.HOSTNAME ?? "0.0.0.0";
-
-const app = next({ dev: false, dir, hostname, port });
-const handle = app.getRequestHandler();
-await app.prepare();
-
-httpServer = createServer((req, res) => {
-  void handle(req, res);
-});
-httpServer.on("error", (err) => {
-  console.error("[server] listen/runtime error:", err);
-  process.exit(1);
-});
 httpServer.listen(port, hostname, () => {
-  listening = true;
   console.log(`> Ready on http://${hostname}:${port}`);
 });

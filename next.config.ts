@@ -1,44 +1,8 @@
 import type { NextConfig } from "next";
-import { existsSync, readFileSync } from "fs";
+import { readFileSync } from "fs";
 import { withSentryConfig } from "@sentry/nextjs";
 
 const { version } = JSON.parse(readFileSync("./package.json", "utf-8")) as { version: string };
-
-/**
- * Read a runtime-deps manifest produced by one of our esbuild bundles
- * (bin/seed.js, bin/turf.js, bin/server.mjs). Each script runs
- * @vercel/nft on its bundle and writes the resulting node_modules
- * path list to a `<bin>.trace.json`. We fold the union into
- * outputFileTracingIncludes below so the standalone tar carries the
- * runtime deps the off-tree bundles need.
- *
- * Missing manifests are non-fatal: a developer running `next build`
- * without first running `build:seed` / `build:cli` / `build:server`
- * (e.g. for local Next-only validation) gets a warning, not a
- * failure. The package.json `prebuild` hook chains all three before
- * `next build` so production builds always have every manifest on
- * disk before this config evaluates.
- */
-function readBundleTrace(path: string): string[] {
-  if (!existsSync(path)) {
-    console.warn(
-      `[next.config] ${path} missing — its bundle's runtime deps won't ship in the standalone tar. Run \`npm run build:seed\` / \`build:cli\` / \`build:server\` to generate.`,
-    );
-    return [];
-  }
-  return JSON.parse(readFileSync(path, "utf-8")) as string[];
-}
-
-// All off-tree esbuild bundles (seed, CLI, server entrypoint) share
-// most of their runtime graph (Sentry, Prisma, Next, etc.). Dedupe the
-// union before handing to Next.
-const bundleTraceIncludes = [
-  ...new Set([
-    ...readBundleTrace("./bin/seed.trace.json"),
-    ...readBundleTrace("./bin/turf.trace.json"),
-    ...readBundleTrace("./bin/server.trace.json"),
-  ]),
-];
 
 // Sentry release identifier. The `service-name@version` shape is
 // Sentry's recommended convention (vs bare version strings or
@@ -82,34 +46,13 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
-  output: "standalone",
   env: { APP_VERSION: version, SENTRY_RELEASE: sentryRelease },
 
-  // Native packages can't be webpacked — declare external so the standalone
-  // tracer picks them up at runtime instead. Prisma CLI is intentionally
-  // NOT here — it's not bundled in the artifact at all under the v2 deploy
-  // contract; prod runs migrations via its own globally installed prisma.
-  // See docs/SPEC.md §8.4 / vis-daily-tracker docs/deployment.md.
+  // Native + WASM packages can't be webpacked — declaring them external
+  // keeps Next from trying to bundle them. They're imported server-side
+  // by app code and resolve at runtime against the artifact's full
+  // node_modules/ (build-on-prod model — see docs/SPEC.md §8.4).
   serverExternalPackages: ["@prisma/client", "@prisma/adapter-pg", "@node-rs/argon2"],
-
-  // Fold the off-tree esbuild bundles' runtime deps into the standalone
-  // tar. bin/seed.js, bin/turf.js, and bin/server.mjs are built OUTSIDE
-  // Next's server import graph, so the standalone tracer never sees their
-  // externals (`@sentry/nextjs`, `@prisma/client`, etc.). Each build
-  // script runs @vercel/nft against its bundle and writes a
-  // runtime-deps manifest. We read those here.
-  //
-  // Why this matters: hand-written entries that import server-side deps
-  // and get postbuild-copied into .next/standalone/ are invisible to
-  // Next's tracer. The vis-daily-tracker May 9 incident hit this exact
-  // shape — server.mjs imported @sentry/nextjs, the standalone tracer
-  // partial-populated the package without copying its package.json,
-  // ESM resolution failed at prod startup with ERR_MODULE_NOT_FOUND.
-  // Folding NFT's trace here lets the bundle declare its runtime
-  // contract instead of hoping Next's tracer covers it.
-  outputFileTracingIncludes: {
-    "*": bundleTraceIncludes,
-  },
 
   headers() {
     return [

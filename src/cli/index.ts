@@ -15,9 +15,8 @@ import { createProgram } from "./program";
  * Build-time smoke flag — `--check` exits 0 after module-level imports
  * resolve, before Commander parses argv. scripts/build-cli.ts spawns
  * the bundle with `--check` so the build fails fast if a transitive
- * import would crash on cold start in prod (e.g. a top-level require
- * that node can't satisfy in the standalone tar). Caught here rather
- * than registered as a Commander option so it never lands in `--help`.
+ * import would crash on cold start. Caught here rather than registered
+ * as a Commander option so it never lands in `--help`.
  */
 
 if (process.argv.includes("--check")) {

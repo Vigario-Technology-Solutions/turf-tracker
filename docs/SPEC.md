@@ -514,77 +514,39 @@ Three taps from app open to confirmed log. Math + warnings done. This is the val
 
 ### 8.4 Deployment posture
 
-**Inherits the vis-daily-tracker v2 artifact-based deploy contract verbatim.** Reference: `C:\Users\tyler\Projects\vis-daily-tracker\docs\deployment.md`. Prod-Claude already implements the consumer side of this contract on the prod host; reusing it means turf-tracker's prod deploy comes online "for free" once we ship a release that matches the same MANIFEST shape.
+**Build-on-prod, standardized on vis-daily-tracker's contract.** Production clones the tagged commit, runs `npm ci && npm run build`, and runs the resulting bundle via `npm start` (= `node server.mjs`). No CI-built tarballs, no `MANIFEST`/`BUILD_INFO`/`SHA256SUMS` handshake — the tagged source IS the artifact.
 
-**What that means concretely for turf-tracker source:**
+Full source-side contract: [`docs/deployment.md`](deployment.md). That's the spec the production deploy script consumes. The canonical rationale for any section there is in [`vis-daily-tracker/docs/deployment.md`](../../vis-daily-tracker/docs/deployment.md) — turf-tracker mirrors its structure and only the values differ. This section captures the high-level posture; detail lives in the linked docs.
 
-- **CI publishes** a single GitHub Release per `v*` tag with two assets: `turf-tracker-v<X.Y.Z>.tar.gz` (Next.js standalone bundle) + `SHA256SUMS`. Draft → publish flow so `release.published` only fires when both assets are attached.
-- **Tarball layout** mirrors vis-daily-tracker §"Tarball layout": `server.js`, `package.json`, `MANIFEST`, `BUILD_INFO`, `prisma.config.ts`, `.next/`, `public/`, `node_modules/` (only app-runtime native deps — Prisma client + adapter, argon2, etc.), `generated/prisma/`, `prisma/` (schema + migrations + seed/), `bin/seed.js` (esbuild-bundled seed).
-- **Prisma CLI is NOT bundled** — same v2 pattern. Schema + migration SQL ship; prod runs them via globally-installed prisma. `NODE_PATH=<npm-global-prefix>/lib/node_modules` exported during `preStartCommands` so `prisma.config.ts` can resolve `prisma/config` from the global install.
+**Why not `output: "standalone"`:** the prior CI-tarball + Next standalone tracer model produced four consecutive bad releases in the sister project (v2.80.0–v2.83.0), each violating the tracer's static-analysis preconditions in a different way (dynamic require in `loadConfig`, off-tree bundles invisible to the tracer, esbuild self-reference of dynamic imports, prisma source not in the trace). Build-on-prod skips the minimization step entirely.
 
-**MANIFEST values for turf-tracker:**
+**Required runtime on the deploy host:** Node 24 (`package.json#engines.node`), `npm`, `git`, libpq + openssl for the `pg` driver / Prisma engines. No `make`/`g++`/`python` — every dep must ship a usable prebuilt binary, adding one that requires source compilation is a contract change. See deployment.md for the full preconditions.
+
+**Required env at runtime:** [`src/lib/required-env.json`](../src/lib/required-env.json). Validated at startup by [`src/lib/runtime-config.ts`](../src/lib/runtime-config.ts).
 
 ```json
-{
-  "schemaVersion": 2,
-  "tag": "v<X.Y.Z>",
-  "startCommand": "node server.js",
-  "preStartCommands": [
-    "prisma migrate deploy",
-    "node bin/seed.js"
-  ],
-  "port": 3000,
-  "healthCheckPath": "/api/health",
-  "requiredEnv": [
-    "DATABASE_URL",
-    "BETTER_AUTH_SECRET",
-    "BETTER_AUTH_URL",
-    "AUTH_PASSWORD_PEPPER"
-  ],
-  "optionalEnv": [
-    "CIMIS_API_KEY",
-    "SMTP_HOST", "SMTP_PORT", "SMTP_FROM", "SMTP_FROM_NAME", "SMTP_REPLY_TO"
-  ],
-  "nodeVersion": "24",
-  "requiredTools": {
-    "prisma": "^7.7.0"
-  }
-}
+["DATABASE_URL", "BETTER_AUTH_SECRET", "BETTER_AUTH_URL", "AUTH_PASSWORD_PEPPER"]
 ```
 
-Differences from vis-daily-tracker MANIFEST:
+**Optional env at runtime:** `CIMIS_API_KEY` (Phase 4 ET₀ auto-fetch), `SMTP_*` (Better-Auth magic-link transport), `SENTRY_DSN`.
 
-- No `STORAGE_PATH` in v1 (no photo uploads in Phase 1; add when photo-attach lands in Phase 4)
-- No `cli` block initially (no operator CLI shipped; revisit when we have non-web admin tasks like soil-test PDF import)
-- `optionalEnv` adds `CIMIS_API_KEY` for the eventual ET₀ integration; SMTP is for Better-Auth magic links
+**`/api/health`** — `200 {"status":"ok"}` when the DB is reachable, `503` when not. Schema-agnostic (`SELECT 1`). Required for the migration backward-compat invariant: new code must boot against the previous release's schema, enforced by the prod-side pre-swap smoke.
 
-**`/api/health` endpoint** — must return `200 {status: "ok"}` when DB is reachable, `503` when not. Same shape as vis-daily-tracker's `src/app/api/health/route.ts`.
+**Shutdown contract** — `server.mjs` traps SIGTERM/SIGINT: drain in-flight HTTP (30s cap), disconnect Prisma, flush Sentry, `process.exit(0)`. systemd's `KillSignal=SIGTERM` and `TimeoutStopSec=90s` are both correct for this contract. Clean exit-0 means `OnFailure=systemd-failure-notify` stays diagnostic-only.
 
-**`src/lib/runtime-config.ts` + `src/instrumentation.ts`** — fail-fast validation of every `requiredEnv` at server startup, surfacing every misconfig in a single error. Mirror `requiredEnv` in this validator if the MANIFEST list changes.
+**Build pipeline** (`npm run build`):
 
-**Pre-swap verification on prod** (handled by prod-Claude's deploy script):
-
-1. Schema version known (v2)
-2. Arch match (`uname -m` vs `BUILD_INFO.arch`)
-3. glibc forward-compat (`ldd --version` ≥ `BUILD_INFO.glibcVersion`)
-4. Node major match (`MANIFEST.nodeVersion` resolves to `/usr/bin/node-24` or system default)
-5. `requiredTools` preflight (prisma installed at declared range)
-6. `STORAGE_PATH` writability (n/a for v1)
+1. Prebuild: `check:public-env` → `build:seed` → `build:cli` → `build:server`. Strict — fails on missing `NEXT_PUBLIC_*` referenced in `src/`.
+2. `next build && serwist build`.
+3. Postbuild: real-boot smoke. Spawns `node server.mjs` on a random loopback port with hermetic stub env (`DATABASE_URL` forced to the RFC 6761 `.invalid` TLD, `SENTRY_DSN` empty, `NODE_ENV=production`), waits for bind, SIGTERM, asserts clean exit-0 within 10s. Catches everything the static `--check` doesn't (module resolution failures, listen succeeding, shutdown handler bugs).
 
 **Phased deployment reality:**
 
-- **Phase 1 (development):** localhost only, accessed from phone via local IP on home Wi-Fi or Tailscale. No CI, no MANIFEST, no prod host. Just `npm run dev`.
-- **Phase 2 (first prod cut):** stand up the same `release.yml` workflow as vis-daily-tracker; tag `v0.1.0`; prod-Claude consumes the artifact on the existing prod host (or a parallel one). This is when the deployment.md contract becomes load-bearing.
-- **Phase 3+:** family/multi-user remote access works via the prod host's public origin (set as `BETTER_AUTH_URL`).
+- **Phase 1 (done):** localhost only. `npm run dev`.
+- **Phase 2 (now):** simplified CI (gate validates the build), `workflow_dispatch` cuts a tagged release, prod-Claude pulls the tag and runs build-on-prod. This is when the contract becomes load-bearing.
+- **Phase 3+:** family/multi-user remote access via the prod host's public origin (`BETTER_AUTH_URL`).
 
-**Backups:** `pg_dump` nightly cron to local disk + Nextcloud-synced folder. Same pattern as vis-daily-tracker (assumed; confirm with prod-Claude if there's a different convention).
-
-**Source-side contract notes for build-time:**
-
-- `next.config.ts` must use `output: "standalone"` and declare native runtime deps in `serverExternalPackages` (Prisma client, adapter, argon2)
-- `package.json` `engines.node` and `.nvmrc` pin Node 24, matching `MANIFEST.nodeVersion`
-- `npm run build:seed` esbuild-bundles `prisma/seed/index.ts` → `bin/seed.js` so prod can run it via plain `node` without tsx
-- Conventional Commits + semver tagging (same convention as vis-daily-tracker — minimalist 6-type set)
+**Backups:** `pg_dump` nightly cron to local disk + Nextcloud-synced folder. Same pattern as vis-daily-tracker.
 
 ### 8.5 Repo layout
 

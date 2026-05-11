@@ -22,10 +22,12 @@ data/
 .next/
 out/
 
-# Build
+# Build artifacts
 dist/
 build/
 bin/
+# server.mjs is the build:server output at the repo root.
+server.mjs
 
 # IDE
 .vscode/

@@ -1,84 +1,220 @@
 # Deployment
 
-**Inherits the v2 artifact-based deploy contract from vis-daily-tracker verbatim.**
+This doc is turf-tracker's source-side deploy contract. It mirrors
+the structure of [`vis-daily-tracker/docs/deployment.md`](../../vis-daily-tracker/docs/deployment.md) —
+turf-tracker standardizes on that contract and only the values change.
+For the canonical rationale of any section here (model, supply-chain
+notes, prune-safety, etc.), read the vis-daily-tracker version.
 
-Source-of-truth document: [`C:\Users\tyler\Projects\vis-daily-tracker\docs\deployment.md`](../../vis-daily-tracker/docs/deployment.md). Read that for the full contract — what the tarball contains, how `MANIFEST` works, the schema versioning rules, the prod-installed tooling pattern, the pre-swap verification steps, the shutdown contract, and rollback semantics.
+## Model
 
-This document only captures **turf-tracker's specific MANIFEST values and the diffs from vis-daily-tracker's profile**. If you need to understand the contract itself, read the linked file.
+**Build-on-prod.** Production clones a tagged commit, runs
+`npm ci && npm run build`, and runs the resulting bundle.
 
----
+The prior contract (CI-built tarballs with `output: "standalone"`)
+relied on Next's static-trace machinery to ship a minimized
+`node_modules/`. Apps with CLI tooling, dynamic requires, custom
+server entrypoints, or CJS/ESM interop edges keep violating its
+preconditions. Build-on-prod removes the translation step.
 
-## MANIFEST values for turf-tracker
+## Required runtime
+
+| Requirement | Source of truth |
+| --- | --- |
+| Node major | `package.json#engines.node` (currently `24.x`) |
+| npm | bundled with Node |
+| git | for `git clone` |
+| PostgreSQL client libraries (`libpq`, `openssl`) | native `pg` driver + Prisma engines |
+
+Native-module policy, source-repo access, external-dependency uptime,
+and supply-chain trust — same notes as vis-daily-tracker. The clone
+URL is `github.com/TylerVigario/turf-tracker`.
+
+## What the repository provides
+
+A tagged commit on `main` whose tree, after `npm ci && npm run build`,
+contains:
+
+| Path | Purpose |
+| --- | --- |
+| `package.json` | `engines.node`, `scripts.start`, `scripts.build`, `dependencies` / `devDependencies` |
+| `package-lock.json` | Lockfile for deterministic `npm ci` |
+| `src/lib/required-env.json` | The required-env contract. Imported by `src/lib/runtime-config.ts` so deploy-time and runtime checks stay in lockstep. |
+| `server.mjs` | Custom entrypoint (after build). Graceful SIGTERM/SIGINT — in-flight drain, Prisma disconnect, Sentry flush, exit 0. |
+| `prisma.config.ts` | Schema path and datasource URL config. Read by the `prisma` CLI from cwd. |
+| `prisma/schema.prisma` + `prisma/migrations/*` | Schema and migration SQL files. |
+| `bin/seed.js` (after build) | Pre-compiled seed runner. Idempotent upserts of all lookup data. |
+| `bin/turf.js` (after build) | Operational CLI binary. See [cli.md](cli.md). |
+| `.next/` (after build) | Next.js build output. |
+
+## Build
+
+`npm run build` runs the prebuild chain
+(`check:public-env`, `build:seed`, `build:cli`, `build:server`), then
+`next build && serwist build`, then a postbuild step that real-boot
+smokes the just-built bundle.
+
+**`check:public-env` is strict.** Same shape as vis-daily-tracker —
+scans `src/` for `process.env.NEXT_PUBLIC_*`, fails the build if any
+referenced var is missing from the build-time environment. Allowlist
+is currently `NEXT_PUBLIC_SENTRY_DSN` (warn-only when absent).
+
+**The postbuild smoke** spawns `node server.mjs` on a random loopback
+port with a hermetic stub environment, waits up to 30 seconds for
+the port to bind, sends SIGTERM, asserts a clean exit-0 within a
+further 10-second budget.
+
+**Hermetic stub environment.** Every required-env value is forced
+regardless of inherited env:
+
+- `DATABASE_URL` → `postgresql://smoke:smoke@db.smoke.invalid:5432/smoke`. The `.invalid` TLD is RFC 6761-reserved as guaranteed-unresolvable; eager DB touch at module-load fails `ENOTFOUND` and the build aborts.
+- `SENTRY_DSN` → empty string. Sentry init no-ops.
+- `NODE_ENV` → `production`.
+- `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `AUTH_PASSWORD_PEPPER` → long-enough placeholder strings.
+
+**Clean-exit assertion.** SIGTERM and wait up to 10s for `exit(0)`.
+Non-zero exit, signal-driven exit, or no exit fails the build —
+catches the shutdown-handler-bug class. Skipped on Windows
+(POSIX-only — Node's child_process can't deliver real signals on
+Windows).
+
+**What the smoke catches:** module resolution failures, ESM/CJS
+interop errors, runtime-config validation, startup import-graph
+errors, listen() succeeding, shutdown reaching exit 0.
+
+**What it doesn't:** real DB connectivity, real Sentry transport,
+real SMTP, real filesystem layout, real env shape. Those belong to
+the production-side pre-swap smoke.
+
+## Start
+
+`npm start` invokes `node server.mjs`. The entrypoint binds `PORT`
+(default `3000`) on `HOSTNAME` (default `127.0.0.1`). The loopback
+default is safe-by-default: a deploy without an explicit `HOSTNAME`
+override is reachable only through the local reverse proxy.
+Production exposes by overriding `HOSTNAME=0.0.0.0`.
+
+## Environment variables
+
+### Runtime required
+
+Canonical list at [`src/lib/required-env.json`](../src/lib/required-env.json):
 
 ```json
-{
-  "schemaVersion": 2,
-  "tag": "v<X.Y.Z>",
-  "startCommand": "node server.mjs",
-  "preStartCommands": [
-    "prisma migrate deploy",
-    "node bin/seed.js"
-  ],
-  "port": 3000,
-  "healthCheckPath": "/api/health",
-  "requiredEnv": [
-    "DATABASE_URL",
-    "BETTER_AUTH_SECRET",
-    "BETTER_AUTH_URL",
-    "AUTH_PASSWORD_PEPPER"
-  ],
-  "optionalEnv": [
-    "CIMIS_API_KEY",
-    "SMTP_HOST", "SMTP_PORT", "SMTP_FROM", "SMTP_FROM_NAME", "SMTP_REPLY_TO",
-    "SENTRY_DSN"
-  ],
-  "nodeVersion": "24",
-  "requiredTools": {
-    "prisma": "^7.8.0"
-  }
-}
+["DATABASE_URL", "BETTER_AUTH_SECRET", "BETTER_AUTH_URL", "AUTH_PASSWORD_PEPPER"]
 ```
 
-`MANIFEST.requiredEnv` mirrors [`src/lib/required-env.json`](../src/lib/required-env.json), which is also the input to [`src/lib/runtime-config.ts`](../src/lib/runtime-config.ts) for fail-fast startup validation. The release workflow reads from the same JSON via `--slurpfile` so source / runtime / contract stay aligned.
+Validated at startup by [`src/lib/runtime-config.ts`](../src/lib/runtime-config.ts).
 
-The two external integrations live now (US Census Geocoder for property addresses, NWS for current weather + forecast on the apply page) are both **API-key-free**, so neither shows up in `optionalEnv`. If we move to keyed providers — Google Maps for richer geocode / map UX, OpenWeatherMap for non-US coverage — they'd land in `optionalEnv` alongside `CIMIS_API_KEY`.
+- `BETTER_AUTH_URL` is the public origin (e.g. `https://turf.example.com`). Server-side absolute URL generation and CSRF origin checks rely on it.
+- `AUTH_PASSWORD_PEPPER` rotation invalidates all existing passwords.
 
-`startCommand` points at [`server.mjs`](../server.mjs), the custom entrypoint that handles SIGTERM/SIGINT gracefully (drain → prisma → sentry → exit 0) instead of the auto-generated `server.js`. Same shape as vis-daily-tracker — see "Shutdown contract" in the source-of-truth doc. The release workflow copies `server.mjs` into the standalone bundle alongside the auto-generated `server.js`; prod runs the former via MANIFEST.
+### Runtime optional
+
+App silently degrades when these are missing:
+
+```text
+CIMIS_API_KEY        (ET₀ auto-fetch — deferred to Phase 4)
+SMTP_HOST
+SMTP_PORT
+SMTP_FROM
+SMTP_FROM_NAME
+SMTP_REPLY_TO
+SENTRY_DSN
+```
+
+### Build + runtime
+
+```text
+NEXT_PUBLIC_SENTRY_DSN           (optional — SDK no-ops if absent)
+```
+
+Currently the only `NEXT_PUBLIC_*` referenced in `src/`. The
+geocoder (US Census) and weather (NWS) integrations are key-free.
+
+### Build-time only (optional)
+
+Sentry source-map upload during `next build`:
+
+```text
+SENTRY_AUTH_TOKEN
+SENTRY_ORG
+SENTRY_PROJECT
+```
+
+Write-scoped credentials, build-only. Absent → upload skipped, build
+succeeds, stack traces in Sentry stay minified.
+
+## Health endpoint
+
+`GET /api/health` returns `200 {"status":"ok"}` when the DB is
+reachable, `503` when not. Served by
+[`src/app/api/health/route.ts`](../src/app/api/health/route.ts).
+
+The route does `SELECT 1` — schema-agnostic. Compatible with any
+schema state including the previous release's. Required for the
+migration backward-compatibility invariant (see vis-daily-tracker
+deployment.md).
+
+The path is hardcoded in this contract. Any change to it gets
+reflected here.
+
+## Database
+
+Migrations: `npm run db:migrate` (= `prisma migrate deploy`). Run
+from the release directory so prisma reads `prisma.config.ts` from
+cwd. Idempotent.
+
+Seed: `node bin/seed.js`, run after migrations. Idempotent (`upsert`
+by `code`). Bundled by `build:seed` so it works after `npm prune
+--omit=dev` strips the seed-script's tsx dev dependency. Same applies
+to `bin/turf.js` (the operational CLI).
+
+**Prune-safety.** `prisma` is classified in `dependencies` (not
+`devDependencies`) because `npm run db:migrate` needs it after any
+prune step. `npm prune --omit=dev` is therefore safe to run at any
+point in the deploy sequence.
+
+**Migration backward-compatibility invariant.** New code must boot
+against the previous release's schema. Enforced by the production-
+side pre-swap smoke (boots new bundle against the live DB before
+applying migrations). Build's postbuild smoke is hermetic and never
+touches a DB — does not contribute to this invariant.
+
+## Shutdown contract
+
+`server.mjs` handles SIGTERM and SIGINT gracefully:
+
+1. `server.close()` + `server.closeIdleConnections()`.
+2. Drain in-flight HTTP with a 30-second hard cap (then `closeAllConnections()`).
+3. `await prisma.$disconnect()`.
+4. `await Sentry.close(2000)`.
+5. `process.exit(0)`.
+
+Same shape as vis-daily-tracker but without the WebSocket close step
+— turf-tracker has no WS surface yet. Add it when the realtime
+transport lands.
+
+systemd's `KillSignal=SIGTERM` and `TimeoutStopSec=90s` are both
+correct for this contract.
+
+## What's not in this doc
+
+These belong to the production environment:
+
+- Deploy trigger (webhook, operator command, etc.)
+- Release directory layout and retention
+- Pre-swap smoke against the real environment
+- Atomic symlink swap mechanics
+- Post-swap health check and rollback
+- Database snapshot/backup strategy
 
 ## Diffs from vis-daily-tracker
 
 | Field | vis-daily-tracker | turf-tracker | Reason |
 | --- | --- | --- | --- |
-| `requiredEnv` | includes `STORAGE_PATH` | omits `STORAGE_PATH` | No photo uploads yet. Add when photo-attach lands in Phase 4. |
-| `optionalEnv` | `GOOGLE_MAPS_API_KEY`, `NEXT_PUBLIC_GOOGLE_MAPS_KEY`, `SENTRY_DSN` | `CIMIS_API_KEY`, `SENTRY_DSN` | Different external integrations. Geocoding (US Census) + weather (NWS) are key-free. CIMIS for Phase 4 ET₀ auto-fetch. |
-| `cli` | declares `bin/dailies.js` + subcommands | absent | No operator CLI shipped. Revisit when we have non-web admin tasks (e.g. soil-test PDF import). |
-| `serverExternalPackages` | sharp, prisma client+adapter, libheif-js, exifr | prisma client+adapter, argon2 | No image pipeline yet. |
-| `requiredTools.prisma` | `^7.8.0` | `^7.8.0` | In lockstep. |
-| CSP `connect-src` / `script-src` | allows `*.googleapis.com` / `*.gstatic.com` | `'self'` only | No Google Maps. Sentry uses the same-origin `tunnelRoute: "/monitoring"` so `connect-src 'self'` is sufficient for events. |
-
-## Source-side build contract
-
-- `next.config.ts` uses `output: "standalone"` and declares native deps in `serverExternalPackages`; wrapped with `withSentryConfig` for source-map upload + same-origin event tunnel
-- `package.json` `engines.node` and `.nvmrc` pin Node 24 (matching `MANIFEST.nodeVersion`)
-- `npm run build:seed` (`scripts/build-seed.ts`) esbuild-bundles `prisma/seed/index.ts` → `bin/seed.js` so prod can run it via plain `node` without tsx installed. Native externals: `@prisma/*`, `prisma`, `@node-rs/argon2`.
-- `server.mjs` at the repo root is the custom Next entrypoint shipped at the tar root; loads `@sentry/nextjs` so the shutdown handler can flush queued events before exit
-- Conventional Commits (commitlint-enforced) drive semver via `git-cliff` (`cliff.toml`)
-- Husky pre-commit hooks are skipped in CI via `HUSKY=0`
-
-## CI / release workflow
-
-`.github/workflows/release.yml` is `workflow_dispatch`-triggered (manual). Two jobs:
-
-1. **gate** — spins up Postgres 17 service, runs `typecheck` + `lint` + `format` + `test`. Verifies Node major pins agree across `NODE_VERSION` env, `.nvmrc`, and `package.json` `engines.node`.
-2. **release** — installs `git-cliff`, computes the next version from commit history (or accepts a manual `bump` input), bumps `package.json`, builds the seed bundle + standalone Next bundle, packages the tarball with `BUILD_INFO` + `MANIFEST` (and `server.mjs` at tar root), computes `SHA256SUMS`, regenerates `CHANGELOG.md`, commits + tags + pushes, and creates a draft GH Release with the tarball + sums attached before flipping it to published. The two-step publish guarantees the `release.published` webhook only fires once both assets are uploaded.
-
-The build step pipes the Sentry secrets (`SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_AUTH_TOKEN`) into `next build`. All optional — when unset, `withSentryConfig` no-ops the source-map upload and the runtime SDK init becomes inert. Set them as repo secrets in GitHub before relying on Sentry.
-
-The `MANIFEST` is built inline in the workflow via `jq` (slurpfile from `src/lib/required-env.json`), so source / runtime / contract stay aligned.
-
-## Phase staging for the deploy contract
-
-- **Phase 0 (done):** localhost only. No CI, no MANIFEST, no prod host. `npm run dev`.
-- **Phase 1 (done):** local dev with the full app shape and the calc + apply flow.
-- **Phase 2 (now):** `release.yml` lives in this repo. Run "Release" with no bump → first auto-detected tag. Prod-Claude consumes the artifact on the prod host. **This is when the contract becomes load-bearing.**
-- **Phase 3+:** family/multi-user remote access via the prod host's public origin (`BETTER_AUTH_URL`).
+| `requiredEnv` | includes `STORAGE_PATH` | omits | No photo uploads yet. Add in Phase 4. |
+| `optionalEnv` | `GOOGLE_MAPS_API_KEY`, `NEXT_PUBLIC_GOOGLE_MAPS_KEY` | `CIMIS_API_KEY` | Different external integrations; geocoder + weather are key-free. |
+| Custom server | hosts WebSocket upgrade | shutdown handler only | No realtime transport yet. |
+| `serverExternalPackages` | sharp, prisma client+adapter, libheif-js, exifr | prisma client+adapter, argon2 | No image pipeline. |
+| CSP `connect-src` | allows `*.googleapis.com` / `*.gstatic.com` | `'self'` only | No Google Maps. Sentry uses same-origin `tunnelRoute: "/monitoring"`. |

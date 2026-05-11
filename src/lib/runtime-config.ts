@@ -6,10 +6,10 @@
  * server before it serves a single request.
  *
  * Single source for the required-var names: `./required-env.json`.
- * The release workflow's `MANIFEST.requiredEnv` reads from the same
- * file so the contract emitted to prod stays aligned with what this
- * module enforces. Adding a required var = add to the JSON, add a
- * format validator below.
+ * docs/deployment.md's "Runtime required" list is the same JSON, so
+ * the contract advertised to prod stays aligned with what this module
+ * enforces. Adding a required var = add to the JSON, add a format
+ * validator below.
  */
 
 import REQUIRED_ENV from "./required-env.json";

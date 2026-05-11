@@ -58,7 +58,7 @@ docs/
 
 This project explicitly inherits a set of conventions and infrastructure from `C:\Users\tyler\Projects\vis-daily-tracker\`. Reference its `CLAUDE.md` and `docs/` when in doubt — that codebase is the model.
 
-- **Deployment contract** — vis-daily-tracker `docs/deployment.md` v2 verbatim (artifact-based, MANIFEST + BUILD_INFO + SHA256SUMS, prod-installed prisma, atomic symlink swap). See `docs/SPEC.md` §8.4 for turf-tracker's specific MANIFEST values.
+- **Deployment contract** — vis-daily-tracker `docs/deployment.md` verbatim (build-on-prod: prod clones the tag, runs `npm ci && npm run build`, runs `npm start`). See `docs/deployment.md` for turf-tracker's specific values + diffs.
 - **Lookup table shape** — every `{ id, code, name, sortOrder, active }`. All rows in `prisma/seed/` as idempotent upserts. Migrations are schema-only.
 - **DB-driven UI labels** — option lists rendered from lookups, not hardcoded arrays.
 - **Form state holds FK IDs end-to-end** — no string-name intermediaries.
@@ -72,7 +72,7 @@ This project explicitly inherits a set of conventions and infrastructure from `C
 
 ## Stack
 
-- **Framework**: Next.js 16 (App Router, standalone output)
+- **Framework**: Next.js 16 (App Router; build-on-prod, no `output: "standalone"`)
 - **DB**: Postgres + Prisma 7 (with `@prisma/adapter-pg`)
 - **Auth**: Better-Auth (NOT next-auth)
 - **PWA / SW**: Serwist (NOT next-pwa — both deprecated libs, do not introduce)
@@ -87,21 +87,25 @@ This project explicitly inherits a set of conventions and infrastructure from `C
 ```bash
 npm install                       # First-time setup (also runs prisma generate)
 npm run dev                       # Next.js dev server
-npm run build                     # Production build (standalone) + Serwist bundle
+npm run dev:server                # tsx server.ts — runs the custom entry for local prod-mimic
+npm run build                     # prebuild (check:public-env + build:seed/cli/server) → next build → serwist build → postbuild real-boot smoke
+npm run start                     # node server.mjs (requires npm run build first)
 npm run typecheck                 # tsc --noEmit
 npm run lint:js                   # ESLint
 npm run lint:js:fix               # ESLint with --fix
 npm run lint:md                   # markdownlint-cli2
 npm run format:fix                # Prettier --write
 npm run db:migrate                # prisma migrate deploy
-npm run db:seed                   # prisma db seed → upsert all lookup rows
+npm run db:seed                   # node bin/seed.js — bundled, prune-safe (requires build:seed first)
+npm run ci                        # lint + typecheck + format + test (gate parity)
+npm run clean                     # wipe .next, bin, server.mjs, caches
 npm test                          # Vitest run
 ```
 
 ## Environment
 
 - **Dev**: Windows 11 + git-bash. Node via `fnm`. PostgreSQL on localhost:5432 (DB name `turf_tracker`).
-- **Prod**: Linux + systemd (same host conventions as vis-daily-tracker). Standalone Next.js artifact + global prisma. See `docs/SPEC.md` §8.4.
+- **Prod**: Linux + systemd. Build-on-prod: deploy host clones the tag and runs `npm ci && npm run build`. See `docs/deployment.md`.
 
 ## Code style & conventions
 

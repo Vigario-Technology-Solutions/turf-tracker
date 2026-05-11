@@ -1,3 +1,21 @@
+# Snapshot the originally-staged file list BEFORE lint-staged runs so
+# we can defensively re-add them afterward. lint-staged is supposed
+# to re-stage files its formatters modified ("Updating Git index
+# again"), but that step has occasionally failed silently on Windows
+# — prettier reformats the working tree, lint-staged doesn't add the
+# new content, and the commit captures the pre-format version with
+# the reformat sitting unstaged in the working tree. The git history
+# shows the wrong content; the next `git status` reveals the
+# diff after the fact. Filtering ACM (Added / Copied / Modified)
+# leaves out deletions/renames since lint-staged handles those fine.
+STAGED=$(git diff --cached --name-only --diff-filter=ACM)
+
 npx lint-staged
-npm run typecheck
-npm test
+
+# Re-stage everything that was originally staged. No-op when
+# lint-staged worked correctly; closes the gap when it didn't.
+# `xargs` skips when input is empty, so the no-files case is fine.
+[ -n "$STAGED" ] && echo "$STAGED" | xargs git add --
+
+node --run typecheck
+node --run test
