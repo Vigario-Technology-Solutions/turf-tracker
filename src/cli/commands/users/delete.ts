@@ -1,5 +1,6 @@
 import type { Command } from "commander";
 import prisma from "@/lib/db";
+import { auditCli } from "../../shared/audit";
 import { confirm } from "../../shared/prompts";
 
 interface DeleteOpts {
@@ -105,6 +106,11 @@ async function run(opts: DeleteOpts): Promise<void> {
   }
 
   await prisma.user.delete({ where: { id: user.id } });
+  auditCli("users:delete", {
+    user_id: user.id,
+    email: user.email,
+    name: (user.displayName ?? user.name ?? "").replace(/\s+/g, "_") || "unknown",
+  });
   process.stderr.write(`Deleted user id=${user.id}.\n`);
 }
 

@@ -29,6 +29,7 @@
     "postinstall": "prisma generate",
     "prebuild": "npm run check:public-env && npm run build:seed && npm run build:cli && npm run build:server",
     "prepare": "husky",
+    "seed:household": "tsx --env-file=.env scripts/dev/seed-household.ts",
     "start": "node server.mjs",
     "test": "vitest run --passWithNoTests",
     "test:ui": "vitest --ui",
