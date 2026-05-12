@@ -47,15 +47,35 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
-    # No `services.postgres` block yet. Every test in src/lib/calc/,
-    # src/lib/rules/, and tests/required-env.test.ts is pure-logic —
-    # no Prisma client touched. When the first DB-backed integration
-    # test lands (most likely covering a rules-engine path that reads
-    # an Area + its latest soil test from the DB), add the Postgres 17
-    # service block + TEST_ADMIN_DATABASE_URL / TEST_DATABASE_URL env
-    # the way vis-daily-tracker's gate does. Running tests against
-    # mocks instead of a real Postgres caught zero bugs and missed
-    # real ones in the sister projects — don't take that shortcut.
+    # Postgres-17 service for the integration-harness rig. tests/rig.test.ts
+    # exercises this on every gate run — drops + recreates
+    # turf_tracker_test, db push the current schema, db seed lookups,
+    # then asserts the lookups landed and that the transaction-rolling
+    # test() wrapper actually rolls back. Catches schema/seed/migration
+    # drift that pure-logic tests can't see. Future DB-backed tests
+    # (rules-engine against real Areas + SoilTests, etc.) reuse the
+    # same harness via tests/helpers/db.ts.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # ADMIN_DATABASE_URL connects to `postgres` (the default DB) so
+      # globalSetup can DROP/CREATE the test DB. TEST_DATABASE_URL is
+      # the one vitest hands to Prisma. See tests/helpers/setup.ts.
+      TEST_ADMIN_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/turf_tracker_test
 
     steps:
       - uses: actions/checkout@v6
