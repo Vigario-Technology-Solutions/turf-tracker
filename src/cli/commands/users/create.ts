@@ -4,7 +4,7 @@ import { hashPassword } from "@/lib/auth/password";
 import { validatePassword } from "@/lib/auth/password-policy";
 import { confirm, password, text } from "../../shared/prompts";
 
-interface CreateOpts {
+export interface CreateUserOpts {
   email?: string;
   name?: string;
   displayName?: string;
@@ -32,16 +32,21 @@ export function register(program: Command): void {
     .option("--display-name <name>", "display name (defaults to --name)")
     .option("--password <password>", "password (prompted if omitted)")
     .option("--unverified", "create with emailVerified=false (default: verified)")
-    .action(async (opts: CreateOpts) => {
+    .action(async (opts: CreateUserOpts) => {
       try {
-        await run(opts);
+        await createUser(opts);
       } finally {
         await prisma.$disconnect();
       }
     });
 }
 
-async function run(opts: CreateOpts): Promise<void> {
+/**
+ * Run the interactive user-creation flow. Exported so `turf setup`
+ * can reuse it for first-install user bootstrap. Caller is
+ * responsible for `prisma.$disconnect()`.
+ */
+export async function createUser(opts: CreateUserOpts): Promise<void> {
   const email = opts.email ?? (await text("Email", { validate: emailLike }));
   const existing = await prisma.user.findUnique({ where: { email }, select: { id: true } });
   if (existing) {

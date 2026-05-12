@@ -118,7 +118,19 @@ Ships:
     turf-tracker-upgrade.service (which runs `turf upgrade`) when an
     RPM upgrade lands. Enable with
     `sudo systemctl enable --now turf-tracker-upgrade.path`.
-  - tmpfiles.d snippet for the /var/lib + /var/cache state dirs
+  - First-install bootstrap via `turf setup` — auto-generates secret
+    keys, prompts for required URLs/DB, writes
+    /etc/sysconfig/turf-tracker at 0600, offers to enable+start the
+    service, and offers to create the first user.
+  - `turf backup` / `turf restore` — single-tarball backup tool;
+    bundles pg_dump custom-format dump + (when STORAGE_PATH is set)
+    a storage tar + sysconfig.env into one .tar.gz under
+    /var/backups/turf-tracker/. flock'd against concurrent
+    backup/restore.
+  - `turf status` — composite health check (env, DB, services,
+    Path-unit opt-in state, /api/health).
+  - tmpfiles.d snippet for the /var/lib + /var/cache + /var/backups
+    + /run state dirs
   - sysusers.d snippet declaring the 'turf-tracker' system user
   - Canonical default env at /usr/lib/turf-tracker/default.env
   - Apache reverse-proxy snippet at /usr/share/turf-tracker/
@@ -273,7 +285,7 @@ systemd-tmpfiles --create %{_tmpfilesdir}/%{name}.conf || :
 # Use the non-restart variant. dnf upgrade / removal of this
 # package doesn't restart the running service from rpm scriptlets.
 # Restart is driven by `turf upgrade` — either operator-invoked or
-# auto-triggered by %{name}-upgrade.path when the operator has
+# auto-triggered by %%{name}-upgrade.path when the operator has
 # enabled that opt-in. Restart-via-rpm-macro would bypass the
 # migrate/seed ordering the upgrade command guarantees.
 %systemd_postun %{name}.service
@@ -286,33 +298,25 @@ systemd-tmpfiles --create %{_tmpfilesdir}/%{name}.conf || :
 # this scriptlet. Operator drives the post-transaction step either
 # manually (`sudo turf upgrade`) or by opting into auto-
 # orchestration once (`sudo systemctl enable --now
-# %{name}-upgrade.path` — fires on PathChanged of the package.json
-# this RPM ships, triggers %{name}-upgrade.service, which invokes
+# %%{name}-upgrade.path` — fires on PathChanged of the package.json
+# this RPM ships, triggers %%{name}-upgrade.service, which invokes
 # `turf upgrade`).
 #
-# The only work %posttrans does here is `systemctl daemon-reload`
+# The only work posttrans does here is `systemctl daemon-reload`
 # so the new unit files are visible, plus a friendly next-step
 # message branched by first-install vs upgrade.
 if [ -d /run/systemd/system ]; then
     systemctl daemon-reload
     if [ "$1" -eq 1 ]; then
         cat <<'MSG'
-First install of %{name}. Next steps:
+First install of %{name}. Next step:
 
-  1. Create /etc/sysconfig/%{name} with real values for
-     DATABASE_URL, BETTER_AUTH_SECRET, BETTER_AUTH_URL, and
-     AUTH_PASSWORD_PEPPER. See /usr/lib/%{name}/default.env for the
-     full template of supported keys.
-  2. sudo turf upgrade
+  sudo turf setup
 
-`turf upgrade` runs pending migrations, refreshes seed data, and
-restarts the service. Once that completes, create the initial admin
-user with `sudo turf users:create --role admin`.
-
-To auto-run `turf upgrade` on future RPM upgrades, enable the path
-unit once:
-
-  sudo systemctl enable --now %{name}-upgrade.path
+This writes /etc/sysconfig/%{name} with auto-generated secrets,
+prompts for required values, runs migrations + seed, enables the
+service, and offers to create the first user — all in one flow.
+Run `turf setup --help` for options.
 MSG
     elif systemctl is-enabled --quiet %{name}-upgrade.path 2>/dev/null; then
         echo "Upgrade detected. %{name}-upgrade.path will trigger 'turf upgrade' shortly."
@@ -363,6 +367,7 @@ fi
   self-hosted GitHub Actions runner on the prod host, native
   bindings (@node-rs/argon2, prisma engines) match the production
   runtime's glibc exactly. Deploy is `sudo dnf --refresh upgrade
-  %{name}`. Separate migrate + seed oneshots invoked from
-  %posttrans, decoupled from boot so they run on every RPM
-  transaction and never on a plain restart.
+  %%{name}` followed by `sudo turf upgrade` (or opt into auto-
+  orchestration once via `sudo systemctl enable --now
+  %%{name}-upgrade.path`). Separate migrate + seed oneshots,
+  decoupled from boot — invoked only by `turf upgrade`.

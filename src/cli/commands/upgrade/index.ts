@@ -1,4 +1,5 @@
 import type { Command } from "commander";
+import { runBackup } from "../backup";
 import { systemctlRun } from "../../shared/systemctl";
 
 /**
@@ -45,6 +46,7 @@ import { systemctlRun } from "../../shared/systemctl";
 
 interface UpgradeOpts {
   restart?: boolean;
+  backupFirst?: boolean;
 }
 
 export function register(program: Command): void {
@@ -54,12 +56,24 @@ export function register(program: Command): void {
       "Apply pending migrations + refresh seed + restart the service after a dnf transaction",
     )
     .option("--no-restart", "apply schema/seed only; skip the service restart")
+    .option(
+      "--backup-first",
+      "run `turf backup` before applying the upgrade; abort the upgrade if backup fails",
+    )
     .action(async (opts: UpgradeOpts) => {
       await run(opts);
     });
 }
 
 async function run(opts: UpgradeOpts): Promise<void> {
+  if (opts.backupFirst) {
+    process.stderr.write(`Backing up before upgrade (--backup-first)…\n`);
+    // In-process call rather than spawning a child: same Prisma
+    // connection, same node env, errors propagate naturally so a
+    // failed backup aborts the upgrade before any migration runs.
+    await runBackup({});
+    process.stderr.write(`\n`);
+  }
   await systemctlRun("daemon-reload");
   await systemctlRun("start", "turf-tracker-migrate.service");
   await systemctlRun("start", "turf-tracker-seed.service");

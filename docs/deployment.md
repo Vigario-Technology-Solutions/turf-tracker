@@ -140,7 +140,7 @@ All paths read-only, RPM-owned:
 | `/usr/lib/systemd/system/turf-tracker-seed.service` | Lookup-data seed oneshot, ordered `After=turf-tracker-migrate.service`. Same lifecycle as migrate — invoked by `turf upgrade`, not enabled. |
 | `/usr/lib/systemd/system/turf-tracker-upgrade.path` | Opt-in Path unit watching `/usr/share/turf-tracker/package.json` for changes. When enabled, triggers `turf-tracker-upgrade.service` on every `dnf upgrade`. Not enabled by default — operator opts in once with `sudo systemctl enable --now turf-tracker-upgrade.path`. |
 | `/usr/lib/systemd/system/turf-tracker-upgrade.service` | Oneshot wrapper around `turf upgrade`, invoked by the Path unit OR directly by an operator (`sudo systemctl start turf-tracker-upgrade.service`). Not enabled at boot. |
-| `/usr/lib/tmpfiles.d/turf-tracker.conf` | tmpfiles backstop for state dirs. |
+| `/usr/lib/tmpfiles.d/turf-tracker.conf` | tmpfiles backstop for state, cache, backup, and runtime-lock dirs (`/var/lib`, `/var/cache`, `/var/backups`, `/run/turf-tracker`). |
 | `/usr/lib/sysusers.d/turf-tracker.conf` | Declarative `turf-tracker` user/group definition (processed by `systemd-sysusers` from `%pre`). |
 | `/usr/bin/turf` | CLI wrapper. Sources the two-layer env and exec's `node-24` against the bundled CLI core. Operators run `sudo turf <subcommand>` without knowing the env-file paths. |
 
@@ -158,6 +158,13 @@ Created at runtime by the service unit:
 `/var/lib/turf-tracker/` (StateDirectory) and
 `/var/cache/turf-tracker/` (CacheDirectory). The `.next/cache`
 symlink resolves through the latter.
+
+Created by tmpfiles.d at boot (and re-created by `systemd-tmpfiles
+--create` in `%post`): `/var/backups/turf-tracker/` (+ `preserve/`
+subdir) for `turf backup` tarballs, 0700 root:root because the
+default backup includes the operator's sysconfig (AUTH_PASSWORD_PEPPER,
+BETTER_AUTH_SECRET); `/run/turf-tracker/` for the backup/restore
+mutual-exclusion lock.
 
 ## Database
 
@@ -417,19 +424,16 @@ selects magnitude, not whether to bump.
 
 ## Production cycle
 
-**First install**:
+**First install** (one operator path; `turf setup` drives it):
 
 1. Write the Apache vhost at `/etc/httpd/conf.d/turf-tracker.conf` (or wherever) with `ServerName`, TLS cert paths, log paths, the HTTP→HTTPS redirect, and `Include /usr/share/turf-tracker/apache-snippet.conf` inside the `<VirtualHost *:443>` block. The snippet ships the ProxyPass plumbing and security/cache headers so the operator vhost owns only host-specific config.
 2. (Optional) Drop in `/etc/systemd/system/turf-tracker.service.d/notify.conf` with `OnFailure=` if you want failure notification routed somewhere.
 3. (Optional) `sudo systemctl enable --now turf-tracker-upgrade.path` to opt into auto-orchestration on future `dnf upgrade` transactions. Skip if you prefer to drive every upgrade manually with `turf upgrade`.
-4. `sudo dnf install turf-tracker`. The `%posttrans` detects first install, prints next-step instructions pointing at `/etc/sysconfig/turf-tracker` + `turf upgrade`, and exits without touching the DB or starting the service.
-5. Write `/etc/sysconfig/turf-tracker` with real values for `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, and `AUTH_PASSWORD_PEPPER`. `/usr/lib/turf-tracker/default.env` lists every recognized key; copy the structure and fill in real values for the required keys (which ship empty by design so the RPM has no baked-in secrets). Permissions: `0640 root:turf-tracker` so the systemd units read it as PID 1 (before privilege drop) AND `turf` CLI invocations as a group member can read without sudo; `0640 root:root` is the stricter option if all CLI usage goes through `sudo turf`.
-6. `sudo turf upgrade`. Runs migrate → seed → `try-restart turf-tracker.service`. The service starts up against the new schema.
-7. `sudo systemctl enable --now turf-tracker.service` if it isn't already running (first install — `try-restart` is a no-op on a not-yet-started unit). Subsequent boots auto-start the service.
-8. `sudo turf users:create --role admin` to create the initial admin user. Auth works after this.
-9. `sudo turf status` — composite health check confirms the whole stack is wired correctly.
+4. `sudo dnf install turf-tracker`. The `%posttrans` detects first install, prints a one-line next-step pointing at `turf setup`, and exits without touching the DB or starting the service.
+5. `sudo turf setup`. The CLI auto-detects the RPM context, reads `/usr/lib/turf-tracker/default.env` as the template, prompts for `DATABASE_URL` + `BETTER_AUTH_URL`, auto-generates `BETTER_AUTH_SECRET` + `AUTH_PASSWORD_PEPPER` (32-byte hex each), writes `/etc/sysconfig/turf-tracker` at 0o600, offers to run `systemctl start turf-tracker-migrate` → `start turf-tracker-seed` → `enable --now turf-tracker.service` in one prompt, AND offers to create the first user on a fresh DB. Decline any prompt to inspect state and proceed manually.
+6. `sudo turf status` — composite health check confirms the whole stack is wired correctly.
 
-**Automation** (ansible / etc.): pre-stage `/etc/sysconfig/turf-tracker` before `dnf install`, then run `sudo turf upgrade && sudo systemctl enable --now turf-tracker.service`. The orchestration step is `sudo turf upgrade` for every subsequent transaction (or rely on `turf-tracker-upgrade.path` if enabled).
+**Automation** (ansible / etc.): pre-stage `/etc/sysconfig/turf-tracker` before `dnf install`, then run `sudo turf setup --non-interactive`. Setup honors the existing file, generates only missing secrets, and prints the systemctl commands instead of prompting for orchestration. The orchestration step is then `sudo turf upgrade` (or rely on `turf-tracker-upgrade.path` if enabled).
 
 **Upgrade** — two paths, operator's choice:
 
@@ -494,6 +498,130 @@ downgraded RPM:
 - **Migrations**: `prisma migrate deploy` applies any unapplied migration in the on-disk migrations folder. The downgraded RPM ships an older — strictly-subset — migrations folder, so all entries are already in `_prisma_migrations`; migrate is a no-op. Migrations themselves are not rolled back. See "Migration backward-compatibility" above for the forward-only invariant.
 - **Seed**: re-runs the older RPM's `bin/seed.js`. Upserts are idempotent and use stable `code` keys; rows present in both old and new shape stay put, rows added since the old release don't get reverted (the seed only adds; it doesn't delete). Practically a no-op for the normal additive-lookup case, but lookup rows that were RENAMED or REPURPOSED between releases would get their old `name` re-applied. Audit lookup-table changes before relying on dnf downgrade as a rollback path.
 
+**Secret rotation**:
+
+`sudo turf setup --rotate` regenerates every secret in the
+`SECRET_KEYS` set (currently `BETTER_AUTH_SECRET` and
+`AUTH_PASSWORD_PEPPER`) and rewrites `/etc/sysconfig/turf-tracker`.
+Without `--rotate`, re-running setup preserves existing secrets and
+reports them under `Preserved secrets:` in the summary. Rotation
+invalidates all existing sessions (`BETTER_AUTH_SECRET`) or all
+existing passwords (`AUTH_PASSWORD_PEPPER`) — coordinate carefully.
+
+After rotating, restart the running service to pick up the new
+values: `sudo systemctl restart turf-tracker.service`.
+
+## Backup / restore
+
+`turf backup` and `turf restore` are opinionated single-tarball
+commands mirroring the GitLab/GHE pattern. One command produces one
+file with everything needed to recover; one command applies the
+reverse. Building blocks (`pg_dump`, `tar`) are exposed via the
+runtime check, not declared as hard `Requires:` — operators running
+remote Postgres often manage DB backups at the database tier and
+don't want the postgresql client tools installed locally.
+
+### What the tarball contains
+
+| Member | Source |
+| --- | --- |
+| `manifest.json` | `{app_version, timestamp, components, pg_dump_format, schema_revision}`. Restore reads this first; refuses to proceed across a major-version skew without `--force`. `schema_revision` is the most recent `migration_name` from `_prisma_migrations` — informational for operators inspecting old backups. |
+| `db.sql.custom` | `pg_dump --format=custom --no-owner --no-privileges` of `$DATABASE_URL`. Replayable by `pg_restore --clean --if-exists` regardless of role/owner assumptions on the restore host. |
+| `storage.tar` | Tar of `$STORAGE_PATH`, **only included when the env is set**. turf-tracker has no image-upload pipeline yet; the component is in place for the day uploads land. Operators backing up a host without `STORAGE_PATH` configured get a smaller tarball with `components: ["db", "sysconfig"]`. |
+| `sysconfig.env` | Copy of `/etc/sysconfig/turf-tracker`. Included by default — preserving `AUTH_PASSWORD_PEPPER` on restore avoids forced password resets for every user. Skip with `--no-sysconfig` if you segregate secret material from backup files. |
+
+### `turf backup`
+
+```bash
+sudo turf backup                              # → /var/backups/turf-tracker/turf-tracker-<ISO>.tar.gz
+sudo turf backup --output /mnt/nas/turf/      # custom directory or full path
+sudo turf backup --preserve                   # → /var/backups/turf-tracker/preserve/...  (retention-safe)
+sudo turf backup --no-sysconfig               # exclude /etc/sysconfig from the tarball
+```
+
+Pre-flight before any work runs:
+
+- **`pg_dump` available.** Missing → `"Install with: sudo dnf install postgresql"`.
+- **`pg_dump` major ≥ server major.** Older clients refuse newer servers; the check surfaces the exact mismatch + the install hint.
+- **Free disk ≥ estimated size × 1.2.** `pg_database_size(current_database())` + `du`-equivalent on `$STORAGE_PATH` (skipped when unset), statvfs the output dir. Fails early with: `"Insufficient disk space at <dir>: <free> free, ~<needed> needed. Free up space or pass --output to a different volume."` Catches the disk-full failure mode at second 0 rather than mid-pg_dump.
+
+Concurrency: `flock`-style lock at `/run/turf-tracker/backup.lock` shared between backup and restore. Stale locks (holder PID dead, `kill(pid, 0)` returns ESRCH) are reclaimed; live holders abort with the holder's PID.
+
+### `turf restore <backup-path>`
+
+```bash
+sudo turf restore /var/backups/turf-tracker/turf-tracker-2026-05-11T19-30-45.tar.gz
+sudo turf restore <path> --no-sysconfig       # keep current operator env values
+sudo turf restore <path> --force              # cross major version (schema may be irreconcilable)
+sudo turf restore <path> --yes                # bypass the type-the-filename confirmation (automation)
+```
+
+Restore is **destructive**: wipes the database (`pg_restore --clean`), wipes-and-replaces `$STORAGE_PATH` (only when `STORAGE_PATH` is set AND the tarball carries a storage component), overwrites `/etc/sysconfig/turf-tracker` (unless `--no-sysconfig`). The interactive flow is:
+
+1. Extract the tarball to a tmpdir; read `manifest.json` before touching anything.
+2. Check `manifest.app_version` major against the installed package. If different, refuse unless `--force`.
+3. Print the manifest + the destructive plan.
+4. Prompt: `Type the backup filename to confirm:` — operator must type the exact basename of the tarball. Wrong input → abort, no changes.
+5. Stop `turf-tracker.service` (if active).
+6. `pg_restore --clean --if-exists`.
+7. Wipe + extract `storage.tar` into `$STORAGE_PATH` (skipped when no `STORAGE_PATH` is set on the restore host, or when the backup doesn't carry one).
+8. Copy `sysconfig.env` back to `/etc/sysconfig/turf-tracker` (unless `--no-sysconfig`).
+9. Start `turf-tracker.service` (only if it was active before restore).
+
+`--yes` bypasses step 4 for automation. If a step downstream of the wipe fails, the operator restores from an older backup — rollback-of-rollback is out of scope.
+
+### Pre-upgrade backup hook
+
+```bash
+sudo turf upgrade --backup-first
+```
+
+Runs `turf backup` in-process before the migrate/seed/restart chain. Same Prisma connection, errors propagate naturally — a failed backup aborts the upgrade before any schema work. Default off: operators with off-host nightly snapshots don't need an inline safety net. Recommended for any upgrade that involves a schema change you're not certain is reversible.
+
+### Preserve / pin convention
+
+`--preserve` writes to `/var/backups/turf-tracker/preserve/` instead of the retention-able root. Intended for pinning a known-good before a risky change (a release with extensive migrations, a major postgres upgrade, etc.).
+
+**Operator-side contract**: any retention policy (cron, `tmpfiles.d` aging, manual purge) MUST exclude the `preserve/` subdir. The package ships no automated retention — the operator's policy is operator-owned.
+
+### Out of scope (operator concerns)
+
+These belong outside `turf backup`. The CLI gives you the artifact; the rest is the operator's deploy environment:
+
+- **Retention policy.** Backups accumulate in `/var/backups/turf-tracker/` until the operator's cron/`tmpfiles.d` aging removes them. The `preserve/` subdir is exempt by convention; the operator's retention rule has to honor it.
+- **Off-host shipping.** `rsync` / `rclone` / vendor-managed backup pulls from `/var/backups/turf-tracker/` to wherever the operator's disaster-recovery target is. Run from a separate cron, after `turf backup`'s timer fires.
+- **Encryption at rest.** Filesystem-level (`fscrypt`, LUKS) or off-host destination encryption. Out of CLI scope.
+- **Point-in-time recovery.** Requires WAL archiving (`pgBackRest`, `Barman` territory). Overkill for solo-prod scale; not addressed here.
+- **Verification drills.** "Did this backup actually restore?" is operator discipline — periodic restore-to-a-test-database is the canonical drill. The package ships no automated verifier.
+
+### Scheduling
+
+The package does not ship a backup timer. Operator wires their own — common shape:
+
+```ini
+# /etc/systemd/system/turf-tracker-backup.timer  (operator-owned)
+[Unit]
+Description=Nightly turf-tracker backup
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+```ini
+# /etc/systemd/system/turf-tracker-backup.service  (operator-owned)
+[Unit]
+Description=Run turf backup
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/turf backup
+```
+
 ## Diffs from website (reference implementation)
 
 | Field | website | turf-tracker | Reason |
@@ -505,6 +633,6 @@ downgraded RPM:
 | DB | SQLite, file on disk under StateDirectory | Postgres, external | Multi-user + multi-property scale needed Postgres. |
 | Required env | `SQLITE_PATH` only | `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `AUTH_PASSWORD_PEPPER` | Auth not stubbed; Postgres connection string vs file path. |
 | Migrate/seed mechanism | none (sqlite has no explicit migrations) | Operator-driven via `turf upgrade` (migrate + seed oneshots, plus opt-in `*-upgrade.path` / `*-upgrade.service` pair for auto-orchestration). | Prisma schema lifecycle needs to run before the new code, but it's release-scoped and operator-gated — `%posttrans` only does `daemon-reload` + an informational next-step message. |
-| Health/diagnostic CLI | none | `turf status` composite check (env, DB, services, Path-unit opt-in, /api/health) | Mirrors `dailies status` / `occ status`; one command answers "is this deploy healthy?". |
-| Bundled artifacts | server.js + Next tree + /usr/bin/dailies wrapper | + bin/turf.js (CLI core) + /usr/bin/turf wrapper + bin/seed.js + prisma/ + generated/ + prisma.config.ts | turf-tracker ships an operational CLI; Prisma needs schema + generated client at runtime. |
+| Bundled CLI commands | `setup`, `upgrade`, `status`, `backup`, `restore`, `users:*`, `secret`, plus domain-specific (attachments, submissions, images, etc.) | `setup`, `upgrade`, `status`, `backup`, `restore`, `users:*` | Same operational floor; turf has no attachments / images / submissions domain yet, so the per-domain subcommands aren't present. |
+| Backup storage component | always included from `$STORAGE_PATH` (default `/var/lib/<pkg>/storage`) | only included when `STORAGE_PATH` is set in the env | turf-tracker has no image-upload pipeline yet. The component slot is in place for when uploads land; backups today contain only db + sysconfig. |
 | Gate `Validate build` env | `NEXT_PUBLIC_SENTRY_DSN` only | + `BETTER_AUTH_SECRET` placeholder | Better-Auth's library-level default-secret check fires during `next build`. |
