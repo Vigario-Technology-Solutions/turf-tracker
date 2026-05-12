@@ -184,6 +184,18 @@ export NEXT_PUBLIC_SENTRY_DSN=
 npm ci --prefer-offline --no-audit --no-fund
 npm run build
 
+# Strip devDependencies after the build completes. The build pipeline
+# consumes tsx / typescript / esbuild / eslint / @serwist/cli /
+# tailwindcss / @tailwindcss/postcss / @types/* / vitest / etc.; none
+# of them are needed at runtime. server.js / bin/turf.js / bin/seed.js
+# are esbuild-bundled and self-contained, and the migrate oneshot's
+# /usr/bin/node-24 node_modules/.bin/prisma migrate deploy survives
+# the prune because prisma lives in `dependencies` (not devDeps).
+# Sheds ~100-200 MB from /usr/share/turf-tracker/node_modules in the
+# resulting RPM. --omit=dev is the canonical flag (npm@8+); --no-audit
+# / --no-fund match the npm ci flags above.
+npm prune --omit=dev --no-audit --no-fund
+
 
 %install
 # App tree — everything the runtime needs lives under /usr/share/<pkg>/.
