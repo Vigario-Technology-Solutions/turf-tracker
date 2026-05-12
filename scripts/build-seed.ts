@@ -16,10 +16,16 @@
  * node_modules/.
  */
 import { build } from "esbuild";
-import { chmod, mkdir } from "node:fs/promises";
+import { chmod, mkdir, readFile } from "node:fs/promises";
 
 const outdir = "bin";
 const outfile = `${outdir}/seed.js`;
+
+// Inline SENTRY_RELEASE at build time so seed-emitted Sentry events
+// (rare — only on schema/lookup-row breakage) carry the right release
+// tag. Same approach as scripts/build-server.ts + scripts/build-cli.ts.
+const { version } = JSON.parse(await readFile("./package.json", "utf-8")) as { version: string };
+const sentryRelease = `turf-tracker@${version}`;
 
 await mkdir(outdir, { recursive: true });
 
@@ -31,6 +37,9 @@ await build({
   target: "node24",
   outfile,
   external: ["@prisma/*", "prisma", "@node-rs/argon2"],
+  define: {
+    "process.env.SENTRY_RELEASE": JSON.stringify(sentryRelease),
+  },
   banner: {
     js: [
       `import { createRequire } from "module";`,

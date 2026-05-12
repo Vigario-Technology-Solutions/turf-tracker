@@ -45,6 +45,7 @@
     "@prisma/client": "^7.8.0",
     "@react-email/components": "^1.0.12",
     "@sentry/nextjs": "^10.52.0",
+    "@sentry/node": "^10.52.0",
     "@serwist/next": "^9.5.11",
     "better-auth": "^1.6.10",
     "clsx": "^2.1.1",

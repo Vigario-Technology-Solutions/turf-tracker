@@ -17,8 +17,27 @@
  * migration SQL.
  */
 
+import * as Sentry from "@sentry/node";
 import { PrismaClient } from "@generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
+
+// Sentry init for the seed runtime. The seed runs as `node bin/seed.js`
+// under turf-tracker-seed.service — outside Next's instrumentation
+// hook and outside the CLI wrapper's Sentry init. Without this, a
+// schema/lookup-data seed failure during `turf upgrade` lands in the
+// journal but never surfaces in Sentry — and a broken seed gates
+// every operator at startup. Same DSN/release as the rest of prod so
+// the issue ties to the version that ran it. Init is no-op when
+// SENTRY_DSN is empty, so dev hosts that haven't wired Sentry pass
+// through cleanly.
+const sentryDsn = process.env.SENTRY_DSN;
+if (sentryDsn) {
+  Sentry.init({
+    dsn: sentryDsn,
+    environment: process.env.NODE_ENV,
+    release: process.env.SENTRY_RELEASE,
+  });
+}
 
 const adapter = new PrismaPg({
   connectionString:
@@ -106,6 +125,15 @@ async function main() {
 main()
   .then(() => prisma.$disconnect())
   .catch(async (e) => {
+    // Capture before flushing + exiting. Without flush(2000) the
+    // process exits before the envelope upload completes and the
+    // event is lost — particularly relevant under
+    // turf-tracker-seed.service where a non-zero exit aborts the
+    // calling `turf upgrade` orchestration immediately.
+    if (sentryDsn) {
+      Sentry.captureException(e);
+      await Sentry.flush(2000);
+    }
     console.error(e);
     await prisma.$disconnect();
     process.exit(1);

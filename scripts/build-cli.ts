@@ -22,12 +22,20 @@
  */
 import { build } from "esbuild";
 import { spawnSync } from "node:child_process";
-import { chmod, mkdir, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { createProgram } from "../src/cli/program";
 
 const outdir = "bin";
 const outfile = `${outdir}/turf.js`;
 const manifestPath = `${outdir}/cli-manifest.json`;
+
+// Inline SENTRY_RELEASE at build time so CLI-emitted Sentry events
+// carry the right release tag without depending on prod's env file
+// to define it. The wrapper (/usr/bin/turf) sources default.env +
+// optional /etc/sysconfig but neither one needs to know about the
+// release; same approach as scripts/build-server.ts.
+const { version } = JSON.parse(await readFile("./package.json", "utf-8")) as { version: string };
+const sentryRelease = `turf-tracker@${version}`;
 
 await mkdir(outdir, { recursive: true });
 
@@ -39,6 +47,9 @@ await build({
   target: "node24",
   outfile,
   external: ["@prisma/*", "prisma", "@node-rs/argon2"],
+  define: {
+    "process.env.SENTRY_RELEASE": JSON.stringify(sentryRelease),
+  },
   // Shebang lives in src/cli/index.ts; esbuild preserves it.
   banner: {
     js: [
