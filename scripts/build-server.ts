@@ -1,22 +1,23 @@
 /**
  * Compile server.ts → server.js at the repo root.
  *
- * server.js is what `npm start` (= `node server.js`) invokes. Bundles
+ * server.js is what the systemd unit's `ExecStart=/usr/bin/node-24
+ * server.js` invokes (and what `npm start` invokes locally). Bundles
  * app code (server.ts + everything it imports from `@/lib`) into a
  * single ESM file; leaves third-party deps external for runtime
- * resolution against the artifact's full node_modules/ (build-on-prod
- * model — see docs/deployment.md / vis-daily-tracker docs/deployment.md).
+ * resolution against the RPM-shipped node_modules tree at
+ * /usr/share/turf-tracker/node_modules/. See docs/deployment.md.
  *
  * No `.mjs` — the project is `"type": "module"` so plain `.js` IS ESM
  * at the Node loader level. `.mjs` is upstream cling-pattern for
  * forcing ESM in a CJS-default project; here it would only be
  * inconsistent noise alongside bin/*.js (already ESM-via-package.json).
  *
- * No NFT trace step — under build-on-prod the artifact ships every dep
- * `npm ci --omit=dev` installs, so there's no minimized tree that
- * needs runtime-deps manifests folded back into Next's standalone
- * tracer. The earlier `output: "standalone"` contract needed
- * bin/server.trace.json; build-on-prod doesn't.
+ * No NFT trace step — the RPM ships every dep `npm ci --omit=dev`
+ * installs, so there's no minimized tree that needs runtime-deps
+ * manifests folded back into Next's standalone tracer. The earlier
+ * `output: "standalone"` contract needed bin/server.trace.json; this
+ * contract doesn't.
  *
  * Build-time --check smoke validates module-level imports (cheap
  * pre-check). Real-boot smoke runs in scripts/postbuild.ts against the

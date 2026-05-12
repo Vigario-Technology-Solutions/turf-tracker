@@ -73,8 +73,9 @@ Bundle settings:
 
 - `format=esm`, `target=node24` — matches the prod runtime.
 - **External**: `@prisma/*`, `prisma`, `@node-rs/argon2`. Resolved at
-  runtime against the artifact's full `node_modules/` (build-on-prod
-  ships every dep `npm ci --omit=dev` installs). Native + Prisma
+  runtime against the RPM-shipped `node_modules/` tree at
+  `/usr/share/turf-tracker/node_modules/` (the spec's `%build` runs
+  `npm ci` and ships the resulting tree intact). Native + Prisma
   stays external.
 - **Why bundle vs not**: the bundle has to survive
   `npm prune --omit=dev` so prod can run `node bin/turf.js` even

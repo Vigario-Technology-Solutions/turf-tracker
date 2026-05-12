@@ -51,14 +51,16 @@ prisma/
 
 docs/
 ├── SPEC.md                              # Architecture + data model + calculations + workflows
-└── deployment.md                        # Pointer to vis-daily-tracker's v2 contract (inherited)
+├── deployment.md                        # RPM-as-artifact deploy contract — what the repo provides, what the host needs
+└── cli.md                               # `turf` CLI surface — operational subcommands + build pipeline
 ```
 
-## Inherited from vis-daily-tracker
+## Inherited from sibling projects
 
-This project explicitly inherits a set of conventions and infrastructure from `C:\Users\tyler\Projects\vis-daily-tracker\`. Reference its `CLAUDE.md` and `docs/` when in doubt — that codebase is the model.
+This project explicitly inherits conventions and infrastructure from two sibling repos. Reference their `CLAUDE.md` and `docs/` when in doubt — when something here is ambiguous, the answer is "do it like the references do."
 
-- **Deployment contract** — vis-daily-tracker `docs/deployment.md` verbatim (build-on-prod: prod clones the tag, runs `npm ci && npm run build`, runs `npm start`). See `docs/deployment.md` for turf-tracker's specific values + diffs.
+- **Reference repos** — `C:\Users\tyler\Projects\tylervigario\` (the landmark — `github.com/TylerVigario/website`, the original RPM-as-artifact pilot) and `C:\Users\tyler\Projects\vis-daily-tracker\` (sibling adopter, a.k.a. pipetree). Pipetree often has the most up-to-date code patterns; the landmark is the source of the deploy contract itself.
+- **Deployment contract** — RPM-as-artifact: a tagged commit on `main` is built by CI on a self-hosted GitHub Actions runner running on the prod host, signed (public-signer subkey since turf is a public package, vs the landmark's private-signer), published to `/srv/dnf-repo-public/` (served at `https://repo.tylervigario.com/`), and attached to a GitHub Release. See [`docs/deployment.md`](docs/deployment.md) for the full contract.
 - **Lookup table shape** — every `{ id, code, name, sortOrder, active }`. All rows in `prisma/seed/` as idempotent upserts. Migrations are schema-only.
 - **DB-driven UI labels** — option lists rendered from lookups, not hardcoded arrays.
 - **Form state holds FK IDs end-to-end** — no string-name intermediaries.
@@ -72,7 +74,7 @@ This project explicitly inherits a set of conventions and infrastructure from `C
 
 ## Stack
 
-- **Framework**: Next.js 16 (App Router; build-on-prod, no `output: "standalone"`)
+- **Framework**: Next.js 16 (App Router; RPM-as-artifact deploy, no `output: "standalone"`)
 - **DB**: Postgres + Prisma 7 (with `@prisma/adapter-pg`)
 - **Auth**: Better-Auth (NOT next-auth)
 - **PWA / SW**: Serwist (NOT next-pwa — both deprecated libs, do not introduce)
@@ -105,7 +107,7 @@ npm test                          # Vitest run
 ## Environment
 
 - **Dev**: Windows 11 + git-bash. Node via `fnm`. PostgreSQL on localhost:5432 (DB name `turf_tracker`).
-- **Prod**: Linux + systemd. Build-on-prod: deploy host clones the tag and runs `npm ci && npm run build`. See `docs/deployment.md`.
+- **Prod**: Fedora 43 + systemd. RPM-as-artifact: CI on a self-hosted runner on the prod host produces a signed `.rpm` per release; `dnf upgrade turf-tracker` swaps files in place, then `sudo turf upgrade` (or the opt-in `turf-tracker-upgrade.path` Path unit) runs migrate + seed + restart. See [`docs/deployment.md`](docs/deployment.md).
 
 ## Code style & conventions
 
@@ -131,7 +133,8 @@ npm test                          # Vitest run
 
 ## Reference projects
 
-- **vis-daily-tracker** (`C:\Users\tyler\Projects\vis-daily-tracker\`) — model project. Read its `CLAUDE.md` and `docs/` for patterns we inherit. When something here is ambiguous, the answer is "do it like vis-daily-tracker does."
+- **website / landmark** (`C:\Users\tyler\Projects\tylervigario\` → `github.com/TylerVigario/website`) — the original RPM-as-artifact pilot. Source of the deploy contract; turf-tracker's `docs/deployment.md` mirrors its structure with turf-specific values + a public-repo + AGPL diff set captured in the "Diffs from website" table.
+- **vis-daily-tracker / pipetree** (`C:\Users\tyler\Projects\vis-daily-tracker\`) — sibling adopter. Has the most up-to-date implementation of CLI patterns (setup / upgrade / status / backup / restore / users:create); turf-tracker's CLI mirrors its shape with the model-specific adaptations called out in setup/users:create comments.
 
 ## Auto-memory
 

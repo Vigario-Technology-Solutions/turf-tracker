@@ -6,10 +6,10 @@
  *
  * Why: `prisma db seed` (per prisma.config.ts) shells out to
  * `npx tsx prisma/seed/index.ts`, which depends on tsx being on
- * PATH. Under the build-on-prod contract, prod runs the seed via
- * `node bin/seed.js` after `npm prune --omit=dev` strips tsx. The
- * bundled form is the prune-safe deploy path; the shelled form is
- * dev-only convenience.
+ * PATH. The RPM ships node_modules but `turf-tracker-seed.service`
+ * runs `/usr/bin/node-24 bin/seed.js` directly — no tsx in the
+ * command line and no PATH lookup. The bundled form is the
+ * production-runnable path; the shelled form is dev-only convenience.
  *
  * Native deps stay external — same list as build-cli.ts /
  * build-server.ts, resolved at runtime against the artifact's

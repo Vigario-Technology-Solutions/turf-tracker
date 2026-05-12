@@ -14,13 +14,14 @@
  *
  * Uses the documented Next custom-server API:
  * `next({...}) + app.prepare() + http.createServer(handle)`. Works
- * because the build-on-prod model ships full production deps —
- * `loadConfig`'s dynamic require of `next/dist/compiled/webpack/*`
- * resolves cleanly. The earlier wrap-shape (one-shot
- * http.createServer patch + dynamic import("./server.js")) existed
- * to dodge that path under output:"standalone" and is unnecessary
- * once we're not running standalone — also broken in transpilation
- * (esbuild collapsed the literal dynamic import to a self-reference).
+ * because the RPM ships the full production node_modules tree at
+ * /usr/share/turf-tracker/node_modules/ — `loadConfig`'s dynamic
+ * require of `next/dist/compiled/webpack/*` resolves cleanly against
+ * it. The earlier wrap-shape (one-shot http.createServer patch +
+ * dynamic import("./server.js")) existed to dodge that path under
+ * output:"standalone" and is unnecessary once we're not running
+ * standalone — also broken in transpilation (esbuild collapsed the
+ * literal dynamic import to a self-reference).
  */
 
 import next from "next";
