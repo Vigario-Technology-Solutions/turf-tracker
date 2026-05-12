@@ -387,11 +387,16 @@ public-signer's fingerprint for this repo's runner). Compromise scope
 of `github-runner` is "can sign an RPM at the sudoers-allowed path,"
 not "can take the subkey elsewhere."
 
-Subkey rotation procedure: see
-[`tylervigario/docs/deployment.md`](../../tylervigario/docs/deployment.md)
-"Signing → Subkey rotation". The signing infrastructure is shared
-across all apps under the same master keyring; rotating either subkey
-affects every package using it.
+Subkey rotation procedure: full runnable steps live in the landmark
+repo at
+[Vigario-Technology-Solutions/website — docs/deployment.md "Signing → Subkey rotation"](https://github.com/Vigario-Technology-Solutions/website/blob/main/docs/deployment.md#subkey-rotation).
+The signing infrastructure is shared across all apps under the same
+master keyring; rotating either subkey affects every package using
+it, so the procedure is centrally documented there rather than
+duplicated per repo. Skip any of its three steps (mint key, bind
+`/root/.rpmmacros`, refresh pubkey snapshots + consumer rpm
+keyrings) and `rpm -K` reports `digests SIGNATURES NOT OK` on RPMs
+signed by the new subkey.
 
 ## Versioning + tagging
 

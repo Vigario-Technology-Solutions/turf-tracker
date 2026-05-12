@@ -6,11 +6,11 @@ Built for any cultivated area — lawn, vegetable bed, rose bed, individual tree
 
 ## Status
 
-Phase 0 — initial scaffolding. See [`docs/SPEC.md`](docs/SPEC.md) for the full build plan and architecture. See [`HANDOFF.md`](HANDOFF.md) for the bring-up checklist (delete after first read).
+Phase 1 done (auth, calc, rules engine, apply flow, soil-test entry, product CRUD, weather, PWA). Phase 2 cuts the first signed RPM via `workflow_dispatch` on the release workflow; prod runs `sudo dnf --refresh upgrade turf-tracker`. See [`docs/SPEC.md`](docs/SPEC.md) §8.4 for the phased rollout and [`docs/deployment.md`](docs/deployment.md) for the full deploy contract.
 
 ## Stack
 
-Next.js 16 · Prisma 7 · Postgres · Better-Auth · Serwist (PWA) · Tailwind 4 · shadcn/ui · React Hook Form + Zod · Vitest
+Next.js 16 · Prisma 7 · Postgres · Better-Auth · Serwist (PWA) · Tailwind 4 · shadcn/ui · React Hook Form + Zod · Vitest · Sentry
 
 ## Quick start
 
@@ -25,10 +25,11 @@ npm run dev
 
 ## Documentation
 
-- [`docs/SPEC.md`](docs/SPEC.md) — architecture, data model, calculations, workflows, deployment
-- [`docs/deployment.md`](docs/deployment.md) — inherited v2 artifact contract
+- [`docs/SPEC.md`](docs/SPEC.md) — architecture, data model, calculations, workflows
+- [`docs/deployment.md`](docs/deployment.md) — RPM-as-artifact deploy contract (what the repo provides, what the host needs)
+- [`docs/cli.md`](docs/cli.md) — `turf` operational CLI surface (setup / upgrade / status / backup / restore / users:\*)
 - [`CLAUDE.md`](CLAUDE.md) — vocabulary + guardrails for AI-assisted work
 
 ## License
 
-Private. Personal project.
+Source code: **AGPL-3.0-or-later** — see [LICENSE](LICENSE) for the verbatim license text. If you run a modified version of this code on a network-accessible server, AGPL §13 obligates you to offer the modified source to users interacting with it. This deployment discharges that obligation via the "Source" link in the app footer.

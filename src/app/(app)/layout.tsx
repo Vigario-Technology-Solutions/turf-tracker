@@ -38,11 +38,20 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </nav>
       </header>
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6">{children}</main>
-      {process.env.APP_VERSION && (
-        <footer className="border-t border-neutral-200 py-3 text-center font-mono text-xs text-neutral-500">
-          v{process.env.APP_VERSION}
-        </footer>
-      )}
+      {/* AGPL-3.0 §13 source link. Signed-in users interact with the */}
+      {/* modified service over the network; this discharges the */}
+      {/* obligation to prominently offer Corresponding Source. */}
+      <footer className="border-t border-neutral-200 py-3 text-center font-mono text-xs text-neutral-500">
+        {process.env.APP_VERSION && <>v{process.env.APP_VERSION} · </>}
+        <a
+          href="https://github.com/Vigario-Technology-Solutions/turf-tracker"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="hover:text-neutral-900 hover:underline"
+        >
+          Source
+        </a>
+      </footer>
     </div>
   );
 }
