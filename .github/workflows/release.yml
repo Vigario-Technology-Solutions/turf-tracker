@@ -197,21 +197,53 @@ jobs:
         run: |
           CURRENT=$(node -p "require('./package.json').version")
           if [ -n "${{ inputs.bump }}" ]; then
-            TAG=$(git-cliff --bump ${{ inputs.bump }} --bumped-version)
+            # Explicit operator bump: compute directly from package.json,
+            # bypassing git-cliff entirely. `git-cliff --bump <type>
+            # --bumped-version` respects cliff.toml's commit-type filter
+            # — turf's six-type config skips chore/docs/test, so a
+            # window of chore-only commits since the last tag returns
+            # the unchanged current version even with --bump passed.
+            # That makes the operator-override affordance silently inert
+            # for forcing a release of a chore-only window (the exact
+            # case the workflow's `bump` input is documented for).
+            # Compute the bump directly instead so the operator
+            # contract holds. git-cliff stays load-bearing for changelog
+            # generation in the later step.
+            TAG=v$(node -e "
+              const [maj, min, pat] = require('./package.json').version.split('.').map(Number);
+              const t = process.argv[1];
+              const v = t === 'major' ? [maj + 1, 0, 0]
+                      : t === 'minor' ? [maj, min + 1, 0]
+                      : [maj, min, pat + 1];
+              process.stdout.write(v.join('.'));
+            " "${{ inputs.bump }}")
           else
+            # Auto-detect from commits via git-cliff. Respects
+            # cliff.toml's type filter — returns the unchanged version
+            # if no bumpable (feat / fix / refactor) commit landed since
+            # the last tag, which triggers the skip path below.
             TAG=$(git-cliff --bumped-version)
           fi
           BARE="${TAG#v}"
-          if [ "$BARE" = "$CURRENT" ]; then
-            echo "::warning::No version change detected (already at $CURRENT). Skipping release."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
           echo "version=$BARE" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "Next version: $TAG (current: $CURRENT)"
 
+          if [ "$BARE" = "$CURRENT" ]; then
+            echo "::warning::No version change detected (already at $CURRENT). Skipping release."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+          # Tag-exists guard only runs on the genuinely-bumping path
+          # (the skip branch above exits 0 before reaching here).
+          # Defends against the failure mode where a previous release
+          # run partially completed: package.json bumped + tagged +
+          # pushed but the workflow died before publish / gh release
+          # create. Re-running lands here with the failed tag still in
+          # git; surface that explicitly instead of failing later in
+          # the chain with less context.
           if git rev-parse --verify "refs/tags/$TAG" >/dev/null 2>&1; then
             echo "::error::Tag $TAG already exists in git. A previous release run probably partially completed. Manually delete the tag (git push --delete origin $TAG) or bump past it before retrying."
             exit 1
