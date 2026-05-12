@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -5,7 +6,6 @@ import type { Command } from "commander";
 import prisma from "@/lib/db";
 import { confirm, text } from "../../shared/prompts";
 import { systemctlIsActive, systemctlRun } from "../../shared/systemctl";
-import { createUser } from "../users/create";
 
 /**
  * First-time environment bootstrap.
@@ -131,6 +131,16 @@ function formatEnvFile(entries: TemplateEntry[]): string {
 
 async function run(opts: SetupOpts): Promise<void> {
   const isRpmHost = existsSync(RPM_TEMPLATE_PATH);
+  // Snapshotted BEFORE we write anything. Determines whether this is
+  // first install (no sysconfig yet) vs re-run on an established
+  // deploy. Load-bearing for the user-creation gate at the end:
+  // shouldOfferUserCreation()'s `prisma.user.count()` can't reach the
+  // DB on first install because the in-process Prisma client was
+  // initialized at module load with the empty default.env env (the
+  // wrapper sourced default.env + the nonexistent sysconfig, so
+  // DATABASE_URL is ""). Tracking the pre-write state lets us
+  // unconditional-offer in that case.
+  const sysconfigExistedAtStart = existsSync(RPM_SYSCONFIG_PATH);
 
   const templatePath = opts.template
     ? resolve(opts.template)
@@ -258,12 +268,12 @@ async function run(opts: SetupOpts): Promise<void> {
     if (opts.nonInteractive) {
       printManualNext();
     } else {
-      await offerAutoProgress();
+      await offerAutoProgress(sysconfigExistedAtStart);
     }
   }
 }
 
-async function offerAutoProgress(): Promise<void> {
+async function offerAutoProgress(sysconfigExistedAtStart: boolean): Promise<void> {
   const mainActive = await systemctlIsActive("turf-tracker.service");
   if (mainActive) {
     process.stderr.write(
@@ -285,12 +295,26 @@ async function offerAutoProgress(): Promise<void> {
   await systemctlRun("enable", "--now", "turf-tracker.service");
   process.stderr.write(`\n✓ turf-tracker is up.\n`);
 
-  // First-install user bootstrap. Offer to create the initial user
-  // when the DB has no users (i.e. fresh install). Turf has no
-  // application-level admin role (roles are per-property), so the
-  // prompt is just "first user". Operator assigns property
+  // First-install user bootstrap. Offer to create the initial user.
+  // Turf has no application-level admin role (roles are per-property),
+  // so the prompt is just "first user". Operator assigns property
   // ownership in the web UI after sign-in.
-  if (await shouldOfferUserCreation()) {
+  //
+  // Gate split by first-install vs re-run:
+  //   - First install (sysconfigExistedAtStart === false): the
+  //     in-process Prisma client was initialized at module load with
+  //     the empty default.env env (no /etc/sysconfig yet), so
+  //     `prisma.user.count()` can't reach the DB. We assume "no users
+  //     exist" because the install is fresh and unconditionally offer.
+  //   - Re-run (sysconfigExistedAtStart === true): the wrapper sourced
+  //     a real sysconfig at process start, Prisma is live, gate on
+  //     actual user count.
+  //
+  // Either way, the user-creation step runs in a fresh subprocess via
+  // /usr/bin/turf so the wrapper re-sources whatever sysconfig is on
+  // disk now — captures the values we just wrote in this run.
+  const shouldOffer = sysconfigExistedAtStart ? await userTableEmpty() : true;
+  if (shouldOffer) {
     await offerUserCreation();
   }
 }
@@ -305,13 +329,13 @@ function printManualNext(): void {
   );
 }
 
-async function shouldOfferUserCreation(): Promise<boolean> {
+async function userTableEmpty(): Promise<boolean> {
   try {
-    const count = await prisma.user.count();
-    return count === 0;
+    return (await prisma.user.count()) === 0;
   } catch {
-    // DB unreachable for any reason — skip the prompt. User creation
-    // requires the DB anyway, so there's no useful prompt path here.
+    // DB unreachable from this process. On re-run that's surprising
+    // (sysconfig was already on disk at module load), so skip the
+    // prompt rather than spawning a child that would also fail.
     return false;
   }
 }
@@ -323,9 +347,15 @@ async function offerUserCreation(): Promise<void> {
     process.stderr.write(`Skipped. Create later with: sudo turf users:create\n`);
     return;
   }
-  try {
-    await createUser({});
-  } finally {
-    await prisma.$disconnect();
-  }
+  // Spawn a fresh /usr/bin/turf so the wrapper re-sources the
+  // sysconfig we just wrote — the in-process Prisma client was init'd
+  // before the file existed, so calling createUser() here against the
+  // local prisma import would hit a connection failure.
+  await new Promise<void>((res, rej) => {
+    const proc = spawn("/usr/bin/turf", ["users:create"], { stdio: "inherit" });
+    proc.on("error", rej);
+    proc.on("exit", (code) =>
+      code === 0 ? res() : rej(new Error(`turf users:create exited with code ${code}`)),
+    );
+  });
 }

@@ -42,9 +42,16 @@ export function register(program: Command): void {
 }
 
 /**
- * Run the interactive user-creation flow. Exported so `turf setup`
- * can reuse it for first-install user bootstrap. Caller is
- * responsible for `prisma.$disconnect()`.
+ * Run the interactive user-creation flow. Exported for direct
+ * invocation from other commands that need to create a user without
+ * spawning the CLI wrapper. Caller is responsible for
+ * `prisma.$disconnect()`.
+ *
+ * (Note: `turf setup`'s first-user prompt deliberately does NOT call
+ * this in-process — on first install the in-process Prisma client
+ * was init'd against an empty `/etc/sysconfig` env, so it can't
+ * reach the DB. Setup spawns `/usr/bin/turf users:create` instead so
+ * the wrapper re-sources the sysconfig that setup just wrote.)
  */
 export async function createUser(opts: CreateUserOpts): Promise<void> {
   const email = opts.email ?? (await text("Email", { validate: emailLike }));
