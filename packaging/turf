@@ -16,16 +16,16 @@ set -e
 
 # /etc/sysconfig/turf-tracker is the operator override file and
 # carries secrets (DATABASE_URL with the DB password,
-# BETTER_AUTH_SECRET, AUTH_PASSWORD_PEPPER). Canonical Fedora
-# practice is to ship it 0640 root:turf-tracker so only the service
-# user can read it. A non-turf-tracker-group user running `turf`
-# without sudo would hit a confusing "Permission denied" deep inside
-# the source line below; detect that case up front with a directive
-# error instead.
+# BETTER_AUTH_SECRET, AUTH_PASSWORD_PEPPER). The canonical perms are
+# 0600 root:root — `turf setup` and `turf restore` both write it at
+# this mode, and `sudo turf <cmd>` is the canonical invocation. A
+# non-root invocation would hit a confusing "Permission denied" deep
+# inside the source line below; detect that case up front with a
+# directive error instead.
 if [ -f /etc/sysconfig/turf-tracker ] \
         && [ ! -r /etc/sysconfig/turf-tracker ]; then
     echo "turf: cannot read /etc/sysconfig/turf-tracker — \
-run with sudo or add yourself to the turf-tracker group" >&2
+run with sudo." >&2
     exit 1
 fi
 

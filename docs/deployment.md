@@ -149,7 +149,7 @@ NOT shipped, operator-owned:
 | Path | Purpose |
 | --- | --- |
 | `/etc/httpd/conf.d/<vhost>.conf` (or wherever) | Operator's vhost — picks domain, TLS cert paths, log paths. `Include`s `/usr/share/turf-tracker/apache-snippet.conf` inside. |
-| `/etc/sysconfig/turf-tracker` | Operator env overrides — `DATABASE_URL`, Better-Auth secrets, SMTP creds, Sentry DSN, anything host-specific. Required for the app to boot. |
+| `/etc/sysconfig/turf-tracker` | The env-override file. Required-env values (`DATABASE_URL`, `BETTER_AUTH_*`, `AUTH_PASSWORD_PEPPER`) live here — the service runtime-config-validates on startup and refuses to run if they're missing. **Canonical permissions: `0600 root:root`.** Both `turf setup` and `turf restore` write at this mode; the systemd units read as PID 1 (before privilege drop) regardless of perms; CLI invocations always go through `sudo turf`. The wrapper detects the permission case up front and emits a `run with sudo` directive error rather than letting bash's `Permission denied` surface mid-source. |
 | `/etc/systemd/system/turf-tracker.service.d/*.conf` | Operator drop-ins for resource limits, `OnFailure=` notification, etc. |
 | `/etc/letsencrypt/live/<domain>/...` | TLS certs, certbot-managed. |
 | The Postgres database itself | External; `DATABASE_URL` points at it. Backups operator-owned. |
