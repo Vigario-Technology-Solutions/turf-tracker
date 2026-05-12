@@ -1,0 +1,90 @@
+[Unit]
+Description=turf-tracker — area-based plant nutrition tracking PWA
+Documentation=https://github.com/TylerVigario/turf-tracker
+# DATABASE_URL may point at a remote Postgres, so the network has to
+# be actually up, not just configured. network.target alone is
+# insufficient for that distinction. The Wants= is load-bearing —
+# without it, network-online.target wouldn't get pulled into the
+# dependency graph.
+#
+# postgresql.service is intentionally NOT in After=/Wants= on the
+# main unit. Migrate runs in the separate turf-tracker-migrate.service
+# oneshot invoked from %posttrans, so the main unit only needs the
+# network up to talk to Prisma's connection pool, not the DB to
+# already be migrated. A brief Postgres unavailability at main boot
+# becomes a Prisma reconnect retry instead of a service-startup
+# failure that exhausts the StartLimit budget.
+After=network-online.target
+Wants=network-online.target
+StartLimitBurst=5
+StartLimitIntervalSec=300
+
+[Service]
+Type=simple
+User=turf-tracker
+Group=turf-tracker
+WorkingDirectory=/usr/share/turf-tracker
+
+# Versioned binary on purpose. /usr/bin/node is whatever Fedora's
+# unversioned `nodejs` package decided is the system default — on F43
+# that's v22. The package's Requires: nodejs24 ensures node-24 exists.
+ExecStart=/usr/bin/node-24 server.js
+Restart=always
+RestartSec=5
+
+# Canonical defaults shipped by the RPM at /usr/lib/<pkg>/default.env
+# (read-only). Operator overrides at /etc/sysconfig/<pkg> (optional,
+# not RPM-owned) load AFTER and win — standard systemd "later file
+# overrides earlier" semantics. The `-` on the second line makes it
+# optional, so the unit starts cleanly on hosts where the operator
+# hasn't created the override file.
+EnvironmentFile=/usr/lib/turf-tracker/default.env
+EnvironmentFile=-/etc/sysconfig/turf-tracker
+Environment=NODE_ENV=production
+Environment=HOME=/var/lib/turf-tracker
+
+# State + cache live outside /usr (read-only under ProtectSystem=strict).
+# StateDirectory= and CacheDirectory= create /var/lib/<pkg> and
+# /var/cache/<pkg> at unit-start with correct ownership and add both
+# to ReadWritePaths automatically. The tmpfiles.d config is a
+# backstop for boot ordering.
+StateDirectory=turf-tracker
+CacheDirectory=turf-tracker
+
+# Filesystem hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+RemoveIPC=true
+
+# Kernel hardening
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+
+# Process hardening
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+
+# Syscall filtering — @chown allowed because libuv's copyfile uses fchown.
+SystemCallArchitectures=native
+SystemCallFilter=@system-service @network-io
+SystemCallFilter=~@privileged
+SystemCallFilter=@chown
+
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+MemoryMax=1G
+TasksMax=100
+
+[Install]
+WantedBy=multi-user.target

@@ -7,9 +7,10 @@
  * Why a custom entrypoint instead of `next start`:
  * graceful SIGTERM/SIGINT handling — drains in-flight HTTP requests,
  * disconnects Prisma, flushes Sentry, exits 0. systemd's
- * `systemctl stop` gets a clean exit code so
- * `OnFailure=systemd-failure-notify` stays diagnostic-only. See
- * docs/deployment.md "Shutdown contract".
+ * `systemctl stop` gets a clean exit code so any operator-installed
+ * `OnFailure=` drop-in (the RPM doesn't ship one) only fires on
+ * actual crashes, not on graceful restarts. See docs/deployment.md
+ * "Shutdown contract".
  *
  * Uses the documented Next custom-server API:
  * `next({...}) + app.prepare() + http.createServer(handle)`. Works

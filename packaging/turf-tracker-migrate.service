@@ -1,0 +1,81 @@
+[Unit]
+Description=Prisma migrations for turf-tracker
+Documentation=https://github.com/TylerVigario/turf-tracker
+# DATABASE_URL may point at a remote Postgres; network-online.target
+# is required for that case. The local-postgres ordering against
+# postgresql.service is a no-op when Postgres runs remote — Wants=
+# is permissive, so a missing local postgresql.service unit doesn't
+# block the migrate unit from starting.
+After=network-online.target postgresql.service
+Wants=network-online.target postgresql.service
+
+[Service]
+Type=oneshot
+User=turf-tracker
+Group=turf-tracker
+WorkingDirectory=/usr/share/turf-tracker
+# Same two-layer env as the main service — migrate needs DATABASE_URL
+# from the operator's override file.
+EnvironmentFile=/usr/lib/turf-tracker/default.env
+EnvironmentFile=-/etc/sysconfig/turf-tracker
+Environment=NODE_ENV=production
+Environment=HOME=/var/lib/turf-tracker
+ExecStart=/usr/bin/node-24 node_modules/.bin/prisma migrate deploy
+# Real production migrations on large datasets can legitimately
+# exceed systemd's default 90s start timeout. The dnf upgrade
+# transaction blocks on this; killing it mid-migration is a worse
+# outcome than waiting.
+TimeoutStartSec=infinity
+
+# State + cache via systemd-managed dirs. StateDirectory= adds
+# /var/lib/turf-tracker to ReadWritePaths under ProtectSystem=strict
+# (Prisma writes its engine cache there via $HOME). The dir already
+# exists from main's StateDirectory= or tmpfiles.d backstop; this
+# directive's role here is to land it in ReadWritePaths.
+StateDirectory=turf-tracker
+
+# Hardening — same posture as the main service unit. Migrations
+# run as the service user, but a misbehaving Prisma engine or
+# malicious migration SQL shouldn't have any more host leverage
+# than the main app does.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+RemoveIPC=true
+
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+# AF_UNIX for local Postgres socket (peer auth) + Prisma engine
+# IPC. AF_NETLINK for NSS / DNS-config path lookups. AF_INET +
+# AF_INET6 for remote Postgres.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+
+# Syscall filter — baseline from main. Prisma engine + Node
+# runtime may need additional syscall classes; watch journald for
+# SystemCall denials on first deploy and extend as needed.
+SystemCallArchitectures=native
+SystemCallFilter=@system-service @network-io
+SystemCallFilter=~@privileged
+SystemCallFilter=@chown
+
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+MemoryMax=2G
+TasksMax=200
+
+# No [Install] section. This unit is invoked explicitly from the
+# spec's posttrans on every dnf transaction touching this package;
+# it must not be pulled in by main's Requires= chain or by boot
+# (see docs/deployment.md "Migrations + seed" for why).

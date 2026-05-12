@@ -1,0 +1,8 @@
+# systemd-sysusers spec for turf-tracker.
+#
+# Loaded by `systemd-sysusers --replace=/usr/lib/sysusers.d/<name>.conf`
+# during RPM %pre (via the %sysusers_create_package macro) — creates
+# the user/group declaratively. Format:
+#
+#   Type  Name          ID  GECOS                          Home                    Shell
+u         turf-tracker  -   "turf-tracker service account" /var/lib/turf-tracker   /sbin/nologin

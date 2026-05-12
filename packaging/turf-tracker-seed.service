@@ -1,0 +1,64 @@
+[Unit]
+Description=Lookup data seed for turf-tracker
+Documentation=https://github.com/TylerVigario/turf-tracker
+# Ordered After= the migrate unit so when both are invoked back-to-
+# back from %posttrans (in the spec's transaction-final scriptlet),
+# seed runs against a migrated schema.
+After=network-online.target postgresql.service turf-tracker-migrate.service
+Wants=network-online.target postgresql.service
+
+[Service]
+Type=oneshot
+User=turf-tracker
+Group=turf-tracker
+WorkingDirectory=/usr/share/turf-tracker
+EnvironmentFile=/usr/lib/turf-tracker/default.env
+EnvironmentFile=-/etc/sysconfig/turf-tracker
+Environment=NODE_ENV=production
+Environment=HOME=/var/lib/turf-tracker
+ExecStart=/usr/bin/node-24 bin/seed.js
+TimeoutStartSec=infinity
+
+StateDirectory=turf-tracker
+
+# Hardening — same posture as the main service unit and the migrate
+# oneshot. Seed runs as the service user and shouldn't have more
+# leverage than main.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+RemoveIPC=true
+
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+# AF_UNIX for local Postgres socket (peer auth) + Prisma engine
+# IPC. AF_NETLINK for NSS / DNS-config path lookups. AF_INET +
+# AF_INET6 for remote Postgres.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+
+# Syscall filter — same baseline as main + migrate.
+SystemCallArchitectures=native
+SystemCallFilter=@system-service @network-io
+SystemCallFilter=~@privileged
+SystemCallFilter=@chown
+
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+MemoryMax=2G
+TasksMax=200
+
+# No [Install] section — same lifecycle as the migrate unit. Invoked
+# from posttrans, not from boot, not from a plain main-service
+# restart. Lookup data changes infrequently and rides RPM transactions.

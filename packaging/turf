@@ -1,0 +1,39 @@
+#!/bin/bash
+#
+# /usr/bin/turf — CLI wrapper for turf-tracker.
+#
+# Sources the same two-layer env the systemd units use (canonical
+# defaults plus optional operator override), then exec's node-24
+# against the bundled CLI core. Lets operators run `sudo turf
+# <subcommand>` without knowing about the env-file paths.
+#
+# `set -a` auto-exports every assignment until `set +a`. Sourcing
+# the env files (each VAR=value line is an assignment) exports the
+# vars into node's process environment. Turning auto-export off
+# before exec keeps the flag from leaking into node.
+
+set -e
+
+# /etc/sysconfig/turf-tracker is the operator override file and
+# carries secrets (DATABASE_URL with the DB password,
+# BETTER_AUTH_SECRET, AUTH_PASSWORD_PEPPER). Canonical Fedora
+# practice is to ship it 0640 root:turf-tracker so only the service
+# user can read it. A non-turf-tracker-group user running `turf`
+# without sudo would hit a confusing "Permission denied" deep inside
+# the source line below; detect that case up front with a directive
+# error instead.
+if [ -f /etc/sysconfig/turf-tracker ] \
+        && [ ! -r /etc/sysconfig/turf-tracker ]; then
+    echo "turf: cannot read /etc/sysconfig/turf-tracker — \
+run with sudo or add yourself to the turf-tracker group" >&2
+    exit 1
+fi
+
+set -a
+. /usr/lib/turf-tracker/default.env
+if [ -f /etc/sysconfig/turf-tracker ]; then
+    . /etc/sysconfig/turf-tracker
+fi
+set +a
+
+exec /usr/bin/node-24 /usr/share/turf-tracker/bin/turf.js "$@"

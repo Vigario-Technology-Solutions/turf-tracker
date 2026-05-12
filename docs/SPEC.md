@@ -514,13 +514,13 @@ Three taps from app open to confirmed log. Math + warnings done. This is the val
 
 ### 8.4 Deployment posture
 
-**Build-on-prod, standardized on vis-daily-tracker's contract.** Production clones the tagged commit, runs `npm ci && npm run build`, and runs the resulting bundle via `npm start` (= `node server.js`). No CI-built tarballs, no `MANIFEST`/`BUILD_INFO`/`SHA256SUMS` handshake — the tagged source IS the artifact.
+**RPM-as-artifact, standardized on `TylerVigario/website`'s contract.** A tagged commit on `main` is built by CI on a self-hosted GitHub Actions runner (running on the prod host) into a signed `turf-tracker-<version>-1.fc43.x86_64.rpm`, copied into `/srv/dnf-repo-public/` (served at `https://repo.tylervigario.com/`), and attached to the GitHub Release. Consumers install it with `sudo dnf --refresh upgrade turf-tracker`. turf-tracker is a *public* package — it goes to the WAN-facing repo, not the LAN-only `http://repo.lan/` (`/srv/dnf-repo-private/`, reserved for Tyler-business apps).
 
-Full source-side contract: [`docs/deployment.md`](deployment.md). That's the spec the production deploy script consumes. The canonical rationale for any section there is in [`vis-daily-tracker/docs/deployment.md`](../../vis-daily-tracker/docs/deployment.md) — turf-tracker mirrors its structure and only the values differ. This section captures the high-level posture; detail lives in the linked docs.
+Full source-side contract: [`docs/deployment.md`](deployment.md). That's the spec the production deploy script consumes. The canonical rationale for any section there is in [`tylervigario/docs/deployment.md`](../../tylervigario/docs/deployment.md) — turf-tracker mirrors its structure and only the values differ. This section captures the high-level posture; detail lives in the linked docs.
 
-**Why not `output: "standalone"`:** the prior CI-tarball + Next standalone tracer model produced four consecutive bad releases in the sister project (v2.80.0–v2.83.0), each violating the tracer's static-analysis preconditions in a different way (dynamic require in `loadConfig`, off-tree bundles invisible to the tracer, esbuild self-reference of dynamic imports, prisma source not in the trace). Build-on-prod skips the minimization step entirely.
+**Why RPM-as-artifact and not build-on-prod or `output: "standalone"`:** the prior pivots each ran into a structural failure class. Standalone produced four consecutive bad releases in the sister project (v2.80.0–v2.83.0); build-on-prod simplified things but put the npm registry, GitHub, and Prisma's engine CDN in the deploy critical path on every cutover. RPM-as-artifact bakes everything into a signed file once, ships it through the same dnf repo that the rest of the household's services already use, and makes rollback a `dnf downgrade`.
 
-**Required runtime on the deploy host:** Node 24 (`package.json#engines.node`), `npm`, `git`, libpq + openssl for the `pg` driver / Prisma engines. No `make`/`g++`/`python` — every dep must ship a usable prebuilt binary, adding one that requires source compilation is a contract change. See deployment.md for the full preconditions.
+**Required runtime on the deploy host:** Fedora 43 + `nodejs24` parallel-install package + an external Postgres. The host must be subscribed to the public dnf repo (`https://repo.tylervigario.com/`) with the signing key trusted (bootstrap is `rpm --import` + a `.repo` drop-in served from the repo itself — see deployment.md). Apache (or any reverse proxy) is an operator choice; the RPM ships a snippet at `/usr/share/turf-tracker/apache-snippet.conf` that operators `Include` from their own vhost but it does not declare a hard dependency on `httpd`.
 
 **Required env at runtime:** [`src/lib/required-env.json`](../src/lib/required-env.json). Validated at startup by [`src/lib/runtime-config.ts`](../src/lib/runtime-config.ts).
 
@@ -530,20 +530,26 @@ Full source-side contract: [`docs/deployment.md`](deployment.md). That's the spe
 
 **Optional env at runtime:** `CIMIS_API_KEY` (Phase 4 ET₀ auto-fetch), `SMTP_*` (Better-Auth magic-link transport), `SENTRY_DSN`.
 
-**`/api/health`** — `200 {"status":"ok"}` when the DB is reachable, `503` when not. Schema-agnostic (`SELECT 1`). Required for the migration backward-compat invariant: new code must boot against the previous release's schema, enforced by the prod-side pre-swap smoke.
+**`/api/health`** — `200 {"status":"ok"}` when the DB is reachable, `503` when not. Schema-agnostic (`SELECT 1`).
 
-**Shutdown contract** — `server.js` traps SIGTERM/SIGINT: drain in-flight HTTP (30s cap), disconnect Prisma, flush Sentry, `process.exit(0)`. systemd's `KillSignal=SIGTERM` and `TimeoutStopSec=90s` are both correct for this contract. Clean exit-0 means `OnFailure=systemd-failure-notify` stays diagnostic-only.
+**Shutdown contract** — `server.js` traps SIGTERM/SIGINT: drain in-flight HTTP (30s cap), disconnect Prisma, flush Sentry, `process.exit(0)`. systemd's `KillSignal=SIGTERM` is correct for this contract. Clean exit-0 means any operator-installed `OnFailure=` drop-in (the RPM doesn't ship one) only fires on actual failure, not on `systemctl stop` or `systemctl restart`.
 
-**Build pipeline** (`npm run build`):
+**Migrations + seed** — separate `turf-tracker-migrate.service` and `turf-tracker-seed.service` oneshots (`Type=oneshot`, no `[Install]`) invoked from the spec's `%posttrans` scriptlet on every RPM transaction. The scriptlet runs migrate → seed → `try-restart` of the main unit, in that order. `Type=oneshot` blocks until `ExecStart` completes, so the ordering is enforced without explicit `Requires=`. Decoupled from boot — a transient DB issue at host boot becomes a Prisma reconnect on the main service rather than an `ExecStartPre` failure that exhausts `StartLimitBurst`. Migrations don't drop columns or rename without aliases within the rollback window.
 
-1. Prebuild: `check:public-env` → `build:seed` → `build:cli` → `build:server`. Strict — fails on missing `NEXT_PUBLIC_*` referenced in `src/`.
+**Build pipeline** (driven by `packaging/turf-tracker.spec`'s `%build`, which runs `npm ci && npm run build`):
+
+1. Prebuild: `check:public-env` → `build:seed` → `build:cli` → `build:server`.
 2. `next build && serwist build`.
-3. Postbuild: real-boot smoke. Spawns `node server.js` on a random loopback port with hermetic stub env (`DATABASE_URL` forced to the RFC 6761 `.invalid` TLD, `SENTRY_DSN` empty, `NODE_ENV=production`), waits for bind, SIGTERM, asserts clean exit-0 within 10s. Catches everything the static `--check` doesn't (module resolution failures, listen succeeding, shutdown handler bugs).
+3. Postbuild: real-boot smoke. Spawns `node server.js` on a random loopback port with hermetic stub env, waits for bind, SIGTERM, asserts clean exit-0 within 10s.
+
+The self-hosted runner is Fedora 43 on x86_64 — the same OS/arch as prod — so native bindings (@node-rs/argon2, prisma engines) ship matching prod's glibc exactly. `BuildArch: x86_64`.
+
+**Signing.** The RPM is signed with the `public-signer` subkey of the `server-admin@tylervigario.com` master key (fingerprint `EC7FD18BBAFFA8A05AD0FC2ADE09D5ECD557FA4B`). Master keyring lives at `/etc/server-admin/gnupg/` on the repo host. `github-runner` holds zero key material — the workflow calls `sudo /usr/bin/rpmsign --addsign` via a narrow sudoers rule, and the actual signing runs as root reading `/root/.rpmmacros` (bound to the public-signer subkey for this repo's runner). Compromise scope of `github-runner` is "can sign an RPM at the sudoers-allowed path," not "can take the subkey elsewhere." Consumer trust comes via the `RPM-GPG-KEY-server-admin` pubkey snapshot served from `https://repo.tylervigario.com/`.
 
 **Phased deployment reality:**
 
 - **Phase 1 (done):** localhost only. `npm run dev`.
-- **Phase 2 (now):** simplified CI (gate validates the build), `workflow_dispatch` cuts a tagged release, prod-Claude pulls the tag and runs build-on-prod. This is when the contract becomes load-bearing.
+- **Phase 2 (now):** RPM cuts via `workflow_dispatch` on `release.yml`, prod runs `sudo dnf --refresh upgrade turf-tracker`. This is when the contract becomes load-bearing.
 - **Phase 3+:** family/multi-user remote access via the prod host's public origin (`BETTER_AUTH_URL`).
 
 **Backups:** `pg_dump` nightly cron to local disk + Nextcloud-synced folder. Same pattern as vis-daily-tracker.
