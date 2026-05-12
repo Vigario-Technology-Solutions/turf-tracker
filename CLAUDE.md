@@ -37,7 +37,7 @@ src/
 │   ├── constants.ts                     # All lookup row codes + role/tag/rule literals
 │   ├── runtime-config.ts                # Fail-fast required-env validator
 │   ├── required-env.json                # Single source for required env names (release also reads)
-│   ├── auth/                            # Better-Auth setup + getApiContext, guards (TBD Phase 1)
+│   ├── auth/                            # Better-Auth setup, server/client helpers, password policy, route guards
 │   ├── calc/                            # Pure formulas (water demand, runtime, Na deposition,
 │   │                                    #   product math, conversions). Vitest-tested.
 │   └── rules/                           # "What's Next?" rule functions, one file per rule, each pure.
