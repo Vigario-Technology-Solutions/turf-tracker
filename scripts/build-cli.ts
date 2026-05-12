@@ -46,7 +46,23 @@ await build({
   format: "esm",
   target: "node24",
   outfile,
-  external: ["@prisma/*", "prisma", "@node-rs/argon2"],
+  // Externals:
+  //   - @prisma/* + prisma: native engine binaries + adapter, must
+  //     resolve against the RPM's node_modules at runtime.
+  //   - @node-rs/argon2: native .node binding.
+  //   - @sentry/* + zod: large pure-JS deps already shipped in
+  //     node_modules (both in `dependencies`, so the prune step keeps
+  //     them). Externalizing sheds ~2.5 MB from the bundle —
+  //     metafile-confirmed via scripts/_profile-cli analysis at
+  //     commit time. Node's ESM resolver finds them at
+  //     /usr/share/turf-tracker/node_modules at runtime. Both come
+  //     from the same `npm ci` that produced the bundle, so version
+  //     skew between bundle and node_modules is impossible per
+  //     release. Divergence from vis-daily-tracker's build-cli.ts
+  //     (which bundles inline) is intentional — vis doesn't prune
+  //     devDeps either, so for them the savings ratio is much
+  //     smaller; for turf it's ~50% of the post-prune CLI bundle.
+  external: ["@prisma/*", "prisma", "@node-rs/argon2", "@sentry/*", "zod"],
   define: {
     "process.env.SENTRY_RELEASE": JSON.stringify(sentryRelease),
   },

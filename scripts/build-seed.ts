@@ -36,7 +36,12 @@ await build({
   format: "esm",
   target: "node24",
   outfile,
-  external: ["@prisma/*", "prisma", "@node-rs/argon2"],
+  // Same external list as scripts/build-cli.ts — @sentry/* and zod
+  // also resolve at runtime against /usr/share/turf-tracker/node_modules.
+  // The seed bundle imports @sentry/node directly (init + capture/flush
+  // wrapper); externalizing keeps it from being inlined and duplicating
+  // ~1.5 MB of Sentry+OTel code that's already in node_modules.
+  external: ["@prisma/*", "prisma", "@node-rs/argon2", "@sentry/*", "zod"],
   define: {
     "process.env.SENTRY_RELEASE": JSON.stringify(sentryRelease),
   },
