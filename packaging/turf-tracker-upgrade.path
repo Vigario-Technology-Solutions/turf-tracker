@@ -1,0 +1,15 @@
+[Unit]
+Description=Watch for turf-tracker RPM upgrades
+Documentation=https://github.com/TylerVigario/turf-tracker
+
+[Path]
+# package.json's version field bumps on every release. PathChanged
+# fires on close-after-write, so this catches the moment dnf has
+# finished writing the new file. The trigger invokes
+# turf-tracker-upgrade.service which runs `turf upgrade` (migrate +
+# seed + try-restart main).
+PathChanged=/usr/share/turf-tracker/package.json
+Unit=turf-tracker-upgrade.service
+
+[Install]
+WantedBy=multi-user.target

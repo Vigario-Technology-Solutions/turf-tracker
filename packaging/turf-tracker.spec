@@ -113,6 +113,11 @@ Ships:
     execs node-24 against the CLI core
   - Prisma schema + migrations for runtime apply via migrate oneshot
   - systemd service unit + migration oneshot + seed oneshot
+  - Opt-in upgrade path/service pair: turf-tracker-upgrade.path
+    watches package.json for changes and triggers
+    turf-tracker-upgrade.service (which runs `turf upgrade`) when an
+    RPM upgrade lands. Enable with
+    `sudo systemctl enable --now turf-tracker-upgrade.path`.
   - tmpfiles.d snippet for the /var/lib + /var/cache state dirs
   - sysusers.d snippet declaring the 'turf-tracker' system user
   - Canonical default env at /usr/lib/turf-tracker/default.env
@@ -196,13 +201,18 @@ cp -a bin prisma prisma.config.ts generated \
 rm -rf %{buildroot}%{_datadir}/%{name}/.next/cache
 ln -s /var/cache/%{name} %{buildroot}%{_datadir}/%{name}/.next/cache
 
-# systemd units — main service + migrate oneshot + seed oneshot.
+# systemd units — main service + migrate oneshot + seed oneshot +
+# the opt-in upgrade path/service pair.
 install -D -m 0644 packaging/%{name}.service \
     %{buildroot}%{_unitdir}/%{name}.service
 install -D -m 0644 packaging/%{name}-migrate.service \
     %{buildroot}%{_unitdir}/%{name}-migrate.service
 install -D -m 0644 packaging/%{name}-seed.service \
     %{buildroot}%{_unitdir}/%{name}-seed.service
+install -D -m 0644 packaging/%{name}-upgrade.path \
+    %{buildroot}%{_unitdir}/%{name}-upgrade.path
+install -D -m 0644 packaging/%{name}-upgrade.service \
+    %{buildroot}%{_unitdir}/%{name}-upgrade.service
 
 # tmpfiles.d
 install -D -m 0644 packaging/%{name}.tmpfiles.conf \
@@ -260,35 +270,64 @@ systemd-tmpfiles --create %{_tmpfilesdir}/%{name}.conf || :
 
 
 %postun
-# Note: not using systemd_postun_with_restart. The posttrans
-# scriptlet below handles restart-after-upgrade explicitly so it
-# runs AFTER the migrate + seed units. The macro would restart
-# main before the migrate unit had a chance to apply the new
-# schema, which would cause the new code to start against the old
-# schema (the bug this design exists to prevent). (Comment avoids
-# leading `%` on `posttrans` because rpm's macro engine scans
-# comments for macro references.)
+# Use the non-restart variant. dnf upgrade / removal of this
+# package doesn't restart the running service from rpm scriptlets.
+# Restart is driven by `turf upgrade` — either operator-invoked or
+# auto-triggered by %{name}-upgrade.path when the operator has
+# enabled that opt-in. Restart-via-rpm-macro would bypass the
+# migrate/seed ordering the upgrade command guarantees.
 %systemd_postun %{name}.service
 
 
 %posttrans
-# Apply migrations + seed + restart main on every dnf transaction
-# touching this package. migrate.service and seed.service are
-# oneshots with no [Install] section — they don't run on boot,
-# only when an RPM transaction explicitly starts them here. That's
-# the right scope: "a migration is something a release brings, not
-# something boot brings."
+# Canonical Fedora pattern: install lands files; data init and
+# orchestration are operator-driven. dnf install / upgrade does NOT
+# run migrations, refresh seed data, or restart the service from
+# this scriptlet. Operator drives the post-transaction step either
+# manually (`sudo turf upgrade`) or by opting into auto-
+# orchestration once (`sudo systemctl enable --now
+# %{name}-upgrade.path` — fires on PathChanged of the package.json
+# this RPM ships, triggers %{name}-upgrade.service, which invokes
+# `turf upgrade`).
 #
-# systemctl start on a Type=oneshot unit blocks until ExecStart
-# completes, so migrate finishes before seed starts, and seed
-# finishes before main restarts. No `|| :` after each — if migrate
-# or seed fails, this scriptlet fails loudly and the operator
-# sees the error.
+# The only work %posttrans does here is `systemctl daemon-reload`
+# so the new unit files are visible, plus a friendly next-step
+# message branched by first-install vs upgrade.
 if [ -d /run/systemd/system ]; then
     systemctl daemon-reload
-    systemctl start %{name}-migrate.service
-    systemctl start %{name}-seed.service
-    systemctl try-restart %{name}.service
+    if [ "$1" -eq 1 ]; then
+        cat <<'MSG'
+First install of %{name}. Next steps:
+
+  1. Create /etc/sysconfig/%{name} with real values for
+     DATABASE_URL, BETTER_AUTH_SECRET, BETTER_AUTH_URL, and
+     AUTH_PASSWORD_PEPPER. See /usr/lib/%{name}/default.env for the
+     full template of supported keys.
+  2. sudo turf upgrade
+
+`turf upgrade` runs pending migrations, refreshes seed data, and
+restarts the service. Once that completes, create the initial admin
+user with `sudo turf users:create --role admin`.
+
+To auto-run `turf upgrade` on future RPM upgrades, enable the path
+unit once:
+
+  sudo systemctl enable --now %{name}-upgrade.path
+MSG
+    elif systemctl is-enabled --quiet %{name}-upgrade.path 2>/dev/null; then
+        echo "Upgrade detected. %{name}-upgrade.path will trigger 'turf upgrade' shortly."
+    else
+        cat <<'MSG'
+Upgrade detected. Apply when ready:
+
+  sudo turf upgrade
+
+This runs pending migrations, refreshes seed data, and restarts the
+service. To auto-run on future upgrades, enable the path unit once:
+
+  sudo systemctl enable --now %{name}-upgrade.path
+MSG
+    fi
 fi
 
 
@@ -309,6 +348,8 @@ fi
 %{_unitdir}/%{name}.service
 %{_unitdir}/%{name}-migrate.service
 %{_unitdir}/%{name}-seed.service
+%{_unitdir}/%{name}-upgrade.path
+%{_unitdir}/%{name}-upgrade.service
 %{_tmpfilesdir}/%{name}.conf
 %{_sysusersdir}/%{name}.conf
 %dir %{_prefix}/lib/%{name}

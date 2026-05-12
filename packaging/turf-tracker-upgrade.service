@@ -1,0 +1,25 @@
+[Unit]
+Description=Apply turf-tracker upgrade (migrate + seed + restart)
+Documentation=https://github.com/TylerVigario/turf-tracker
+
+[Service]
+Type=oneshot
+# Run as root because the unit invokes systemctl to drive the
+# migrate, seed, and try-restart units in turn. Each of those runs as
+# the turf-tracker service user via its own User= directive.
+ExecStart=/usr/bin/turf upgrade
+# No Restart= directive on purpose. If `turf upgrade` fails — most
+# commonly because a migration errored or the new code's schema isn't
+# valid yet — blindly retrying would hide the problem. Operator
+# investigates via `systemctl status turf-tracker-upgrade` and
+# `journalctl -u turf-tracker-migrate`, fixes the cause, then
+# manually re-runs `sudo turf upgrade` or `sudo systemctl start
+# turf-tracker-upgrade.service`.
+TimeoutStartSec=infinity
+
+# No [Install] section. This unit is triggered by
+# turf-tracker-upgrade.path (when the operator opts into auto-
+# orchestration) or invoked directly by an operator running
+# `sudo systemctl start turf-tracker-upgrade.service`. It must
+# not run at boot — the upgrade step is tied to RPM transactions and
+# operator intent, not to system startup.
