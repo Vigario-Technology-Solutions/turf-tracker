@@ -511,6 +511,118 @@ existing passwords (`AUTH_PASSWORD_PEPPER`) — coordinate carefully.
 After rotating, restart the running service to pick up the new
 values: `sudo systemctl restart turf-tracker.service`.
 
+## Migrating from build-on-prod
+
+For hosts already running the legacy `/opt/turf-tracker` build-on-prod
+scaffolding (the `turf-deploy.path` webhook-fired pipeline that ran
+`git pull && npm ci && npm run build` in `/opt/turf-tracker` on every
+push). This cutover is effectively a fresh install — there's no live
+RPM to upgrade-in-place from. The operator decommissions the legacy
+side, lays down the RPM, runs `turf setup`, and verifies.
+
+Concretely, on the host:
+
+1. **Stop and disable the legacy units.** Removes the webhook hook
+   point and any auto-redeploy reflex before the on-disk swap.
+
+   ```bash
+   sudo systemctl disable --now turf.service
+   sudo systemctl disable --now turf-deploy.path
+   sudo systemctl disable --now turf-deploy.service
+   ```
+
+2. **Install the RPM.** Fresh install — no `dnf upgrade` semantics
+   apply because no `turf-tracker` RPM has ever been on the host. The
+   `%posttrans` first-install branch fires and points you at `turf
+   setup` (the only thing it does on its own is `daemon-reload`).
+
+   ```bash
+   sudo dnf --refresh install turf-tracker
+   ```
+
+3. **Run setup.** Generates `/etc/sysconfig/turf-tracker` at 0o600,
+   prompts for `DATABASE_URL` + `BETTER_AUTH_URL`, auto-generates
+   `BETTER_AUTH_SECRET` + `AUTH_PASSWORD_PEPPER`, offers to run
+   migrate + seed + `enable --now turf-tracker.service`, and offers
+   to create the first user. **Important**: if the legacy DB carried
+   data the operator wants to preserve, point `DATABASE_URL` at the
+   same Postgres database the legacy `/opt/turf-tracker` was using.
+   Prisma `migrate deploy` is idempotent — re-applying already-applied
+   migrations against the existing schema is a no-op. Setup's
+   first-user prompt then sees existing users and skips the offer.
+
+   ```bash
+   sudo turf setup
+   ```
+
+4. **Decommission the legacy scaffolding.** None of this is owned
+   by the new RPM, so dnf won't clean it up. Paths and unit names
+   may differ slightly per host — verify against the legacy units'
+   `ExecStart=` / `WorkingDirectory=` before `rm`'ing.
+
+   ```bash
+   # Legacy app tree + webhook receiver + secret + deploy script
+   sudo rm -rf /opt/turf-tracker
+   sudo rm -f /var/www/webhooks/turf-deploy.php
+   sudo rm -f /var/www/webhooks/.turf-deploy-secret
+   sudo rm -f /usr/local/sbin/turf-deploy
+   # Legacy systemd units (only after the disable in step 1)
+   sudo rm -f /etc/systemd/system/turf.service \
+              /etc/systemd/system/turf-deploy.path \
+              /etc/systemd/system/turf-deploy.service
+   sudo systemctl daemon-reload
+   # Legacy service user (only if it differs from `turf-tracker` — the
+   # new RPM's sysusers.d creates `turf-tracker`, not `turf`).
+   sudo userdel turf
+   ```
+
+5. **Update the Apache vhost.** The legacy setup likely had a vhost
+   pointing at `/opt/turf-tracker` (file serving + ProxyPass).
+   Replace its body with an `Include` of the RPM-shipped snippet,
+   keep host-specific bits (`ServerName`, TLS cert paths, log paths,
+   HTTP→HTTPS redirect):
+
+   ```apache
+   <VirtualHost *:443>
+       ServerName turf.tylervigario.com
+       SSLEngine on
+       SSLCertificateFile    /etc/letsencrypt/live/turf.tylervigario.com/fullchain.pem
+       SSLCertificateKeyFile /etc/letsencrypt/live/turf.tylervigario.com/privkey.pem
+       Include /etc/letsencrypt/options-ssl-apache.conf
+       Include /usr/share/turf-tracker/apache-snippet.conf
+   </VirtualHost>
+   ```
+
+   ```bash
+   sudo apachectl configtest
+   sudo systemctl reload httpd
+   ```
+
+6. **Verify.** Composite health check confirms the new shape end-to-
+   end (env file, required-env, DB connection + latest migration,
+   service active, `/api/health`):
+
+   ```bash
+   sudo turf status
+   ```
+
+7. **(Optional) Opt into auto-orchestration** on future RPM upgrades:
+
+   ```bash
+   sudo systemctl enable --now turf-tracker-upgrade.path
+   ```
+
+   Same caveat as in "First install" — only safe to enable after
+   `turf setup` has run successfully (sysconfig present on disk).
+
+**No rollback to build-on-prod.** Once the legacy `/opt/turf-tracker`
+tree is removed, there's no in-place fallback. If the cutover hits
+an irrecoverable problem, the recovery path is `turf restore` from
+a backup tarball, or restore the DB from the legacy backup pipeline
+and re-clone `/opt/turf-tracker`. Take a `turf backup` after step 3
+succeeds and before step 4 starts so the destructive operations in
+step 4 have a recent restore point.
+
 ## Backup / restore
 
 `turf backup` and `turf restore` are opinionated single-tarball

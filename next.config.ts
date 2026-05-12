@@ -48,11 +48,30 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   env: { APP_VERSION: version, SENTRY_RELEASE: sentryRelease },
 
-  // Native + WASM packages can't be webpacked — declaring them external
+  // Native packages can't be webpacked — declaring them external
   // keeps Next from trying to bundle them. They're imported server-side
   // by app code and resolve at runtime against the artifact's full
-  // node_modules/ (build-on-prod model — see docs/SPEC.md §8.4).
-  serverExternalPackages: ["@prisma/client", "@prisma/adapter-pg", "@node-rs/argon2"],
+  // node_modules/ tree (the RPM ships /usr/share/turf-tracker/node_modules
+  // intact; the spec's %build runs `npm ci` on a Fedora-43 self-hosted
+  // runner so native bindings match prod glibc exactly).
+  //
+  // The OpenTelemetry instrumentation chain (require-in-the-middle,
+  // import-in-the-middle, @opentelemetry/instrumentation) sidesteps a
+  // Turbopack bug: the bundler emits `require("<pkg>-<contenthash>")`
+  // for externals, and the hashed name doesn't resolve at runtime —
+  // crashes the instrumentation-hook load path on server boot.
+  // Excluding these from bundling means no synthetic name is generated
+  // and the OpenTelemetry/Sentry monkey-patch path stays loadable.
+  // Tracked upstream as vercel/next.js issue 87737. Sentry's own
+  // Next.js troubleshooting page recommends this externalization.
+  serverExternalPackages: [
+    "@prisma/client",
+    "@prisma/adapter-pg",
+    "@node-rs/argon2",
+    "require-in-the-middle",
+    "import-in-the-middle",
+    "@opentelemetry/instrumentation",
+  ],
 
   headers() {
     return [
