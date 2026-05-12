@@ -2,7 +2,7 @@
 header = "# Changelog\n"
 body = """
 {% if version %}\
-## [{{ version | trim_start_matches(pat="v") }}](https://github.com/TylerVigario/turf-tracker/{% if previous.version %}compare/{{ previous.version }}...{{ version }}{% else %}releases/tag/{{ version }}{% endif %}) ({{ timestamp | date(format="%Y-%m-%d") }})
+## [{{ version | trim_start_matches(pat="v") }}](https://github.com/Vigario-Technology-Solutions/turf-tracker/{% if previous.version %}compare/{{ previous.version }}...{{ version }}{% else %}releases/tag/{{ version }}{% endif %}) ({{ timestamp | date(format="%Y-%m-%d") }})
 
 {% else %}\
 ## [Unreleased]

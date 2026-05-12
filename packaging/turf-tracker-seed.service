@@ -1,6 +1,6 @@
 [Unit]
 Description=Lookup data seed for turf-tracker
-Documentation=https://github.com/TylerVigario/turf-tracker
+Documentation=https://github.com/Vigario-Technology-Solutions/turf-tracker
 # Ordered After= the migrate unit so when both are invoked back-to-
 # back from %posttrans (in the spec's transaction-final scriptlet),
 # seed runs against a migrated schema.

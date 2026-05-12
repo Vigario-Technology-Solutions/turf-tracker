@@ -45,7 +45,7 @@ Release:        1%{?dist}
 Summary:        Mobile-first PWA for area-based plant nutrition tracking
 
 License:        AGPL-3.0-or-later
-URL:            https://github.com/TylerVigario/turf-tracker
+URL:            https://github.com/Vigario-Technology-Solutions/turf-tracker
 Source0:        %{name}-%{version}.tar.gz
 # Source1 is the sysusers.d snippet, copied into rpmbuild/SOURCES/ by
 # the workflow alongside the source tarball. The sysusers_create_package

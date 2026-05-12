@@ -1,6 +1,6 @@
 [Unit]
 Description=Apply turf-tracker upgrade (migrate + seed + restart)
-Documentation=https://github.com/TylerVigario/turf-tracker
+Documentation=https://github.com/Vigario-Technology-Solutions/turf-tracker
 
 [Service]
 Type=oneshot

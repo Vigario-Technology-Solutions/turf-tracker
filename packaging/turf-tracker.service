@@ -1,6 +1,6 @@
 [Unit]
 Description=turf-tracker — area-based plant nutrition tracking PWA
-Documentation=https://github.com/TylerVigario/turf-tracker
+Documentation=https://github.com/Vigario-Technology-Solutions/turf-tracker
 # DATABASE_URL may point at a remote Postgres, so the network has to
 # be actually up, not just configured. network.target alone is
 # insufficient for that distinction. The Wants= is load-bearing —

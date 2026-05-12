@@ -23,7 +23,7 @@ import { compassFromDeg, type WeatherSummary } from "./types";
  */
 
 const USER_AGENT =
-  "turf-tracker (https://github.com/TylerVigario/turf-tracker, contact: tylervigario90@gmail.com)";
+  "turf-tracker (https://github.com/Vigario-Technology-Solutions/turf-tracker, contact: tylervigario90@gmail.com)";
 
 export type { WeatherSummary } from "./types";
 

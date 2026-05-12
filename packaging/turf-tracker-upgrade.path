@@ -1,6 +1,6 @@
 [Unit]
 Description=Watch for turf-tracker RPM upgrades
-Documentation=https://github.com/TylerVigario/turf-tracker
+Documentation=https://github.com/Vigario-Technology-Solutions/turf-tracker
 
 [Path]
 # package.json's version field bumps on every release. PathChanged

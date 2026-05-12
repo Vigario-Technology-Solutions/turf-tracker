@@ -1,6 +1,6 @@
 [Unit]
 Description=Prisma migrations for turf-tracker
-Documentation=https://github.com/TylerVigario/turf-tracker
+Documentation=https://github.com/Vigario-Technology-Solutions/turf-tracker
 # DATABASE_URL may point at a remote Postgres; network-online.target
 # is required for that case. The local-postgres ordering against
 # postgresql.service is a no-op when Postgres runs remote — Wants=
