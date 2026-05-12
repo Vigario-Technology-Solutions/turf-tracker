@@ -15,6 +15,16 @@ const { version } = JSON.parse(readFileSync("./package.json", "utf-8")) as { ver
 // upload — same string everywhere or events don't tie to maps.
 const sentryRelease = `turf-tracker@${version}`;
 
+// `'unsafe-eval'` is required by React's dev runtime for reconstructing
+// server-side error stacks in the browser (per next.js content-security-
+// policy docs); it's NOT required in production — neither React nor Next
+// use eval in prod by default. Gating the directive on NODE_ENV closes
+// the eval-injection attack surface for prod traffic without breaking
+// `next dev`. `next build` and `next dev` both set NODE_ENV themselves
+// before loading this config, so the right value is captured at config
+// load time.
+const isDev = process.env.NODE_ENV === "development";
+
 const securityHeaders = [
   { key: "X-Frame-Options", value: "DENY" },
   { key: "X-Content-Type-Options", value: "nosniff" },
@@ -29,8 +39,18 @@ const securityHeaders = [
     key: "Content-Security-Policy",
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      // 'unsafe-inline' stays because Next emits inline hydration
+      // markers + chunk-bootstrap scripts; dropping it requires the
+      // proxy.ts nonce middleware, which in turn disables static
+      // rendering / ISR / CDN caching / PPR. Not worth the rendering-
+      // cost trade for turf's threat model. 'unsafe-eval' is dev-only
+      // (see comment on isDev above).
+      `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
       "worker-src 'self' blob:",
+      // 'unsafe-inline' on style-src for the FOUC-prevention inline
+      // <style> that Next emits + Tailwind's runtime-injected styles.
+      // Same trade as script-src — nonce-based hardening here would
+      // also force dynamic rendering.
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob:",
       "font-src 'self' data:",
@@ -41,6 +61,10 @@ const securityHeaders = [
       "form-action 'self'",
       "base-uri 'self'",
       "object-src 'none'",
+      // Force HTTP→HTTPS upgrade for any embedded resource refs the
+      // app emits (defends against mixed-content downgrade if a stray
+      // http:// URL slips into source or user-generated content).
+      "upgrade-insecure-requests",
     ].join("; "),
   },
 ];
