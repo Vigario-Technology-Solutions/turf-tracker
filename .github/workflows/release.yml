@@ -47,6 +47,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
+    # No `services.postgres` block yet. Every test in src/lib/calc/,
+    # src/lib/rules/, and tests/required-env.test.ts is pure-logic —
+    # no Prisma client touched. When the first DB-backed integration
+    # test lands (most likely covering a rules-engine path that reads
+    # an Area + its latest soil test from the DB), add the Postgres 17
+    # service block + TEST_ADMIN_DATABASE_URL / TEST_DATABASE_URL env
+    # the way vis-daily-tracker's gate does. Running tests against
+    # mocks instead of a real Postgres caught zero bugs and missed
+    # real ones in the sister projects — don't take that shortcut.
+
     steps:
       - uses: actions/checkout@v6
       - name: Verify Node major pins agree
@@ -241,7 +251,18 @@ jobs:
       - name: rpmbuild -ba
         if: steps.version.outputs.skip != 'true'
         env:
-          NEXT_PUBLIC_SENTRY_DSN: ${{ secrets.NEXT_PUBLIC_SENTRY_DSN }}
+          # Sentry source-map upload trio. Read by withSentryConfig in
+          # next.config.ts during `next build` (which the spec's %build
+          # invokes via `npm run build`). Without these, the upload
+          # silently no-ops and prod stack traces stay minified.
+          #
+          # NEXT_PUBLIC_SENTRY_DSN is intentionally NOT passed: the
+          # spec's %build does `export NEXT_PUBLIC_SENTRY_DSN=` so
+          # client-side Sentry init no-ops. Server-side DSN is set
+          # per-host at runtime via /etc/sysconfig/turf-tracker.
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
         run: |
           rpmbuild -ba \
             --define "_version ${{ steps.version.outputs.version }}" \
