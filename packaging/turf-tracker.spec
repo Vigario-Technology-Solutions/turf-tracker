@@ -39,6 +39,17 @@
 # on stripped-upstream files and would just churn timestamps.
 %global         __strip /bin/true
 
+# Drop the RPM payload compression from the Fedora default
+# (w19.zstdio — zstd at max level) to w7.zstdio. The default is
+# tuned for distro-scale bandwidth + mirror storage; we publish to
+# a single repo serving one or two hosts. For a ~160 MB tree of
+# mostly JS, w7 is ~5x faster to compress and ~2-5% larger on
+# disk — a few MB hit that's invisible against the dispatch
+# frequency and download surface of a private/low-traffic repo.
+# Package-local override (no /etc/rpm/macros leakage to website +
+# pipetree, which haven't measured this trade-off yet).
+%global         _binary_payload w7.zstdio
+
 Name:           turf-tracker
 Version:        %{?_version}%{!?_version:0.0.0}
 Release:        1%{?dist}
@@ -199,8 +210,16 @@ npm prune --omit=dev --no-audit --no-fund
 
 %install
 # App tree — everything the runtime needs lives under /usr/share/<pkg>/.
+# Use `cp -al` (hardlink instead of copy-content) for the big trees.
+# BUILD/ and BUILDROOT/ live on the same filesystem under
+# $RUNNER_TEMP/rpmbuild, so hardlinks are valid and shed the ~200 MB
+# of IO that a plain copy of node_modules + .next would incur. Safe
+# here because we've disabled every BRP that mutates files in place
+# (__brp_mangle_shebangs, __strip, debug_package) — nothing further
+# down the build pipeline rewrites a file in BUILDROOT that would
+# inadvertently mutate the BUILD-tree original via the shared inode.
 install -d %{buildroot}%{_datadir}/%{name}
-cp -a server.js .next public node_modules package.json package-lock.json \
+cp -al server.js .next public node_modules package.json package-lock.json \
     %{buildroot}%{_datadir}/%{name}/
 
 # Bundled CLIs and prisma client tree. seed.js + turf.js are bundled
@@ -210,7 +229,7 @@ cp -a server.js .next public node_modules package.json package-lock.json \
 # %%posttrans time. generated/ carries the generated prisma client
 # (output target in schema.prisma is `../generated/prisma`); server.js
 # imports it via tsconfig paths.
-cp -a bin prisma prisma.config.ts generated \
+cp -al bin prisma prisma.config.ts generated \
     %{buildroot}%{_datadir}/%{name}/
 
 # Strip build-time cache and replace with a symlink into /var/cache.
