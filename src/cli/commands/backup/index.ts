@@ -31,10 +31,16 @@ import {
  * timestamp, components, pg_dump format, and the latest applied
  * Prisma migration so `turf restore` can detect schema skew.
  *
- * Default output: /var/backups/turf-tracker/turf-tracker-<ISO>.tar.gz.
- * --preserve writes to the preserve/ subdir, intended as
- * retention-safe (operator's retention policy MUST exclude
- * preserve/). --output PATH overrides both defaults.
+ * Default output: $BACKUP_PATH/turf-tracker-<ISO>.tar.gz where
+ * BACKUP_PATH defaults to /var/backups/turf-tracker (FHS-canonical,
+ * pre-created by the RPM's tmpfiles.d entry). Operators who want a
+ * different destination (e.g., a ZFS dataset under
+ * /mnt/storage/backups/turf-tracker, an NFS mount, an EBS-attached
+ * volume) override $BACKUP_PATH in /etc/sysconfig/turf-tracker AND
+ * ensure the override path exists + is turf-tracker-writable.
+ * --preserve writes to the preserve/ subdir of whichever root
+ * resolved, intended as retention-safe (operator's retention policy
+ * MUST exclude preserve/). --output PATH overrides both defaults.
  *
  * Concurrency: flock on /run/turf-tracker/backup.lock prevents a
  * restore mid-backup from leaving an inconsistent tarball, and
@@ -45,7 +51,10 @@ import {
  * concerns in docs/deployment.md.
  */
 
-const BACKUP_ROOT = "/var/backups/turf-tracker";
+// $BACKUP_PATH is operator-configurable in /etc/sysconfig/turf-tracker.
+// /var/backups/turf-tracker is the FHS-canonical default and the path
+// the RPM's tmpfiles.d entry pre-creates.
+const BACKUP_ROOT = process.env.BACKUP_PATH || "/var/backups/turf-tracker";
 const PRESERVE_DIR = `${BACKUP_ROOT}/preserve`;
 const LOCK_PATH = "/run/turf-tracker/backup.lock";
 const SYSCONFIG_PATH = "/etc/sysconfig/turf-tracker";

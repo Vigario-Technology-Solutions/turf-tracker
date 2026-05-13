@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -14,8 +14,9 @@ import { systemctlIsActive, systemctlRun } from "../../shared/systemctl";
  *
  *   - **RPM host** (the canonical RPM ships
  *     `/usr/lib/turf-tracker/default.env`). Template defaults to that
- *     path, output defaults to `/etc/sysconfig/turf-tracker` at 0o600,
- *     and after writing the env file the command offers to run
+ *     path, output defaults to `/etc/sysconfig/turf-tracker` at
+ *     0o640 root:turf-tracker, and after writing the env file the
+ *     command offers to run
  *     `systemctl start turf-tracker-migrate`, `turf-tracker-seed`, then
  *     `enable --now turf-tracker.service` so first-install setup is a
  *     single command. Requires root.
@@ -289,7 +290,13 @@ async function run(opts: SetupOpts): Promise<void> {
   if (outPath) {
     const resolvedOut = resolve(outPath);
     try {
-      writeFileSync(resolvedOut, output, { mode: 0o600 });
+      // 0o640 root:turf-tracker is the canonical service-secrets
+      // pattern (mirrors /etc/shadow:root:shadow,
+      // /etc/ssl/private/*.key:root:ssl-cert). The service uid reads
+      // via group membership; systemd-invoked unit paths and the CLI
+      // wrapper's skip-when-DATABASE_URL-set logic both work without
+      // privilege-dropping gymnastics.
+      writeFileSync(resolvedOut, output, { mode: 0o640 });
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code === "EACCES" || code === "EPERM") {
@@ -297,6 +304,18 @@ async function run(opts: SetupOpts): Promise<void> {
         process.exit(1);
       }
       throw err;
+    }
+    // chown root:turf-tracker if we're writing the canonical sysconfig
+    // path AND the turf-tracker group exists (RPM host). Skipped
+    // silently for custom --output paths or dev hosts where the group
+    // hasn't been created.
+    if (resolvedOut === RPM_SYSCONFIG_PATH) {
+      const chown = spawnSync("chown", ["root:turf-tracker", resolvedOut]);
+      if (chown.status !== 0) {
+        process.stderr.write(
+          `  Note: chown root:turf-tracker ${resolvedOut} failed — the service user won't be able to read this file via group membership. Fix: \`sudo chown root:turf-tracker ${resolvedOut}\`.\n`,
+        );
+      }
     }
     process.stderr.write(`✓ Wrote ${resolvedOut}\n`);
   } else {

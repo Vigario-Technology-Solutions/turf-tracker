@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
@@ -243,11 +243,19 @@ async function runRestore(backupPath: string, opts: RestoreOpts): Promise<void> 
       if (willRestoreSysconfig && existsSync(sysconfigSrc)) {
         process.stderr.write(`Restoring sysconfig…\n`);
         await fs.copyFile(sysconfigSrc, SYSCONFIG_PATH);
-        // Match `turf setup`'s 0o600 — strict root-only read. CLI
-        // invocations always go through `sudo turf`, so group
-        // membership wouldn't help anyway, and the strictest mode is
-        // the right default for a file carrying AUTH_PASSWORD_PEPPER.
-        await fs.chmod(SYSCONFIG_PATH, 0o600);
+        // Match `turf setup`'s canonical 0o640 root:turf-tracker —
+        // service-secrets pattern (group readable by the service uid,
+        // not world). Systemd-invoked unit paths and the CLI wrapper
+        // both read this file as the turf-tracker user via group
+        // membership; restoring at 0o600 root:root would re-break the
+        // exact failure mode the setup-side fix addresses.
+        await fs.chmod(SYSCONFIG_PATH, 0o640);
+        const chown = spawnSync("chown", ["root:turf-tracker", SYSCONFIG_PATH]);
+        if (chown.status !== 0) {
+          process.stderr.write(
+            `  Note: chown root:turf-tracker ${SYSCONFIG_PATH} failed — the service user won't be able to read this file via group membership. Fix: \`sudo chown root:turf-tracker ${SYSCONFIG_PATH}\`.\n`,
+          );
+        }
       }
 
       if (wasActive) {

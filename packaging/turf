@@ -14,26 +14,41 @@
 
 set -e
 
-# /etc/sysconfig/turf-tracker is the operator override file and
-# carries secrets (DATABASE_URL with the DB password,
-# BETTER_AUTH_SECRET, AUTH_PASSWORD_PEPPER). The canonical perms are
-# 0600 root:root — `turf setup` and `turf restore` both write it at
-# this mode, and `sudo turf <cmd>` is the canonical invocation. A
-# non-root invocation would hit a confusing "Permission denied" deep
-# inside the source line below; detect that case up front with a
-# directive error instead.
-if [ -f /etc/sysconfig/turf-tracker ] \
-        && [ ! -r /etc/sysconfig/turf-tracker ]; then
-    echo "turf: cannot read /etc/sysconfig/turf-tracker — \
+# Two invocation modes:
+#
+#   1. Shell-interactive (operator):  `sudo turf <cmd>`
+#      The user's environment has no DATABASE_URL etc. — this script
+#      sources both env files itself so node sees them.
+#
+#   2. systemd-invoked (any turf-* unit ExecStart=/usr/bin/turf …):
+#      systemd loaded both EnvironmentFile= lines as root before
+#      dropping to User=turf-tracker, so DATABASE_URL is already in
+#      our env. The sysconfig file at 0640 root:turf-tracker is also
+#      readable to the service user via group membership, but re-
+#      sourcing is wasted work when the env is already populated.
+#
+# DATABASE_URL is the discriminator: required at startup (validated
+# by src/lib/runtime-config.ts) and not something the user would
+# accidentally have in their interactive shell env. If it's set,
+# trust it and skip the file-source path entirely.
+if [ -z "${DATABASE_URL:-}" ]; then
+    # Shell-interactive path. Source the two-layer env. If the
+    # operator override file exists but isn't readable, fail fast
+    # with a directive instead of a confusing "Permission denied"
+    # deep inside the source line.
+    if [ -f /etc/sysconfig/turf-tracker ] \
+            && [ ! -r /etc/sysconfig/turf-tracker ]; then
+        echo "turf: cannot read /etc/sysconfig/turf-tracker — \
 run with sudo." >&2
-    exit 1
-fi
+        exit 1
+    fi
 
-set -a
-. /usr/lib/turf-tracker/default.env
-if [ -f /etc/sysconfig/turf-tracker ]; then
-    . /etc/sysconfig/turf-tracker
+    set -a
+    . /usr/lib/turf-tracker/default.env
+    if [ -f /etc/sysconfig/turf-tracker ]; then
+        . /etc/sysconfig/turf-tracker
+    fi
+    set +a
 fi
-set +a
 
 exec /usr/bin/node-24 /usr/share/turf-tracker/bin/turf.js "$@"

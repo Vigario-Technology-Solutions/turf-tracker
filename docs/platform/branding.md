@@ -1,128 +1,113 @@
 # Branding
 
-The codebase identity is `turf-tracker` (package, binary, repo, systemd units, file paths, dev/maintainer artifacts). The **brand the operator's users see** — manifest name, page titles, nav heading, login chrome, logos/icons — is per-deployment configuration. A different operator running the same RPM on a different host sets a different brand without touching the build.
+The codebase identity is `turf-tracker` (package, binary, repo, systemd units, file paths, dev/maintainer artifacts). The **brand the operator's users see** — manifest name, page titles, nav heading, auth chrome, logo — is per-deployment configuration stored in the database. A different operator running the same RPM on a different host sets a different brand without touching the build.
 
 This contract covers four operator-controlled surfaces:
 
-- **`APP_NAME`** — full product name (browser title, nav heading, auth chrome, manifest `name`)
-- **`APP_SHORT_NAME`** — constrained-space variant (manifest `short_name`, iOS home-screen pin)
-- **`APP_OWNER`** — entity providing the service (auth-page subtitle / company byline)
-- **`BRANDING_DIR`** — operator-managed asset directory (logo and icon overrides over the bundled default)
+- **`appName`** — full product name (browser title via the root layout's `title.template`, nav heading, manifest `name`)
+- **`appShortName`** — constrained-space variant (manifest `short_name`, iOS home-screen pin). Falls back to `appName` when null.
+- **`appOwner`** — entity providing the service (auth-page subtitle / company byline). Null hides the subtitle DOM entirely.
+- **`logoFile`** — basename under `/var/lib/turf-tracker/branding/` for an operator-uploaded chrome logo. Null falls back to the bundled SVG icon.
 
-`APP_NAME` / `APP_SHORT_NAME` mirror the W3C Web App Manifest's `name` / `short_name` directly. `APP_OWNER` and `BRANDING_DIR` cover surfaces the manifest doesn't speak to.
+`appName` / `appShortName` mirror the W3C Web App Manifest's `name` / `short_name` pair directly. `appOwner` and `logoFile` cover surfaces the manifest doesn't speak to.
 
-## The text contract
+## Storage
 
-| | `APP_NAME` | `APP_SHORT_NAME` | `APP_OWNER` |
-| - | - | - | - |
-| **Purpose** | Full product name | Constrained-space variant for home-screen labels | Entity providing the service (operator's company) |
-| **Default** | `Turf Tracker` (shipped in `/usr/lib/turf-tracker/default.env`) | `APP_NAME` when unset | Unset — auth chrome renders no subtitle |
-| **Required?** | No — silently falls back. | No — falls back to `APP_NAME`. | No — surface gracefully omits the subtitle. |
-| **Length** | Any length the surface accepts. Long strings elide naturally in OS shortcut UIs. | W3C spec recommends ≤12 chars for reliable home-screen rendering; not enforced. | Any. Auth chrome wraps if it has to. |
-| **Override location** | `/etc/sysconfig/turf-tracker` | `/etc/sysconfig/turf-tracker` | `/etc/sysconfig/turf-tracker` |
-| **Read semantics** | **Freeze-at-startup.** Captured once at module load, surfaced as a `const`. No `process.env` reads on hot paths. Brand changes require `systemctl restart turf-tracker.service`. | Same. | Same. |
+Singleton `Settings` row (id = 1, enforced by `CHECK (id = 1)` in the migration). Defined in `prisma/schema.prisma`:
 
-## Consumers
-
-| Surface | Source file | Reads | Notes |
-| - | - | - | - |
-| PWA manifest `name` | `src/app/manifest.ts` | `APP_NAME` | Install dialogs, app switcher |
-| PWA manifest `short_name` | `src/app/manifest.ts` | `APP_SHORT_NAME` | Home-screen icon label on Android |
-| Apple home-screen pin title | `src/app/layout.tsx` — `metadata.appleWebApp.title` | `APP_SHORT_NAME` | iOS displays this under the home-screen icon |
-| Browser tab / OS window title | `src/app/layout.tsx` — `metadata.title.template` | `APP_NAME` | Wraps every page title as `<page> — <APP_NAME>` |
-| App `applicationName` meta | `src/app/layout.tsx` — `metadata.applicationName` | `APP_NAME` | Some browsers + OS shortcut UIs |
-| Auth-page brand title | `src/app/(auth)/layout.tsx` | `APP_NAME` | Above the sign-in / sign-up card |
-| Auth-page subtitle / byline | `src/app/(auth)/layout.tsx` | `APP_OWNER` | Conditionally rendered — unset → no subtitle DOM at all |
-| App-shell nav heading | `src/app/(app)/layout.tsx` | `APP_NAME` | Brand link in the top bar |
-| Favicon + apple-touch-icon | `src/app/layout.tsx` — `metadata.icons` | Asset URL at `/branding/icon.svg` | Routed through `/branding/[...path]` |
-| Manifest icons (any + maskable) | `src/app/manifest.ts` | Asset URL at `/branding/icon.svg` | Same SVG covers every size and both purposes via `sizes: "any"` |
-
-All consumers read the const at module-load time. There's no per-request env read on a hot path, and there's no brand env var baked into the client bundle (server-only — no `NEXT_PUBLIC_` prefix). Client components needing a brand string receive it as a prop from a server parent.
-
-## The manifest route
-
-`public/manifest.json` is removed; `src/app/manifest.ts` replaces it as a Next App Router route handler.
-
-```typescript
-// src/app/manifest.ts (excerpt)
-export const dynamic = "force-dynamic";
-
-export default function manifest(): MetadataRoute.Manifest {
-  return {
-    name: APP_NAME,
-    short_name: APP_SHORT_NAME,
-    /* ... app-design constants ... */
-    icons: [
-      { src: "/branding/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" },
-      { src: "/branding/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "maskable" },
-    ],
-  };
+```prisma
+model Settings {
+  id              Int      @id
+  appName         String   @default("Turf Tracker")
+  appShortName    String?
+  appOwner        String?
+  logoFile        String?
+  updatedAt       DateTime @updatedAt
 }
 ```
 
-`force-dynamic` is load-bearing: without it Next prerenders the manifest statically at build time and the operator's `/etc/sysconfig/turf-tracker` overrides have no effect (the prerendered file ships with the build's `APP_NAME`). The route is hit once per browser install (cached aggressively after), so per-request rendering is negligible.
+DB-layer defaults apply at row creation. Nullable columns are real `string | null` — no empty-string sentinel translation layer.
 
-`description`, `theme_color`, `background_color`, `display`, `id`, `categories`, `lang`, `dir`, `launch_handler`, `scope`, and the icon set are app-design constants. If a future operator argues otherwise for any of them, that's a separate spec discussion.
+## Read path: `src/lib/brand.ts`
 
-## Asset override
+```ts
+import { getBrand } from "@/lib/brand";
 
-### `CHROME_LOGO_SRC`
-
-```typescript
-export const CHROME_LOGO_SRC: string = ((): string => {
-  if (BRANDING_DIR) {
-    for (const ext of ["svg", "png"] as const) {
-      if (existsSync(path.join(BRANDING_DIR, `logo.${ext}`))) {
-        return `/branding/logo.${ext}`;
-      }
-    }
-  }
-  return "/branding/icon.svg";
-})();
+// In a server component / route handler / server action:
+const brand = await getBrand();
+//   brand.appName        : string
+//   brand.appShortName   : string  (falls back to appName when DB column is null)
+//   brand.appOwner       : string | null
+//   brand.logoFile       : string | null
+//   brand.chromeLogoSrc  : string  ("/api/branding/logo" or "/branding/icon.svg")
 ```
 
-Resolves at module load. Operator drops `logo.svg` (preferred) or `logo.png` inside `BRANDING_DIR` and the const points at it. Without one, the bundled icon fills in so the chrome still renders something sensible. (Currently the auth chrome doesn't reference `CHROME_LOGO_SRC` — it's exported for future use when a logo affordance lands.)
+`getBrand()` does three things at once:
 
-### The `/branding/` route
+1. **`await connection()`** opts the calling route out of static prerender. Every chrome page that reads brand is automatically dynamic — no per-route `export const dynamic = "force-dynamic"` needed.
+2. **`unstable_cache`** with tag `"brand"` + 60s revalidate. First page render hits Postgres; subsequent renders return the cached value until an admin write calls `revalidateTag("brand", { expire: 0 })` or the TTL expires.
+3. **Null/fallback translation.** Null `appShortName` → returns `appName`. Null `logoFile` → `chromeLogoSrc` resolves to the bundled SVG URL.
 
-`src/app/branding/[...path]/route.ts` serves every asset under the `/branding/` URL space:
+For non-request contexts (CLI subcommands — where `connection()` would throw "outside of a request"), use `readBrand()` instead. Same data, same cache, no prerender opt-out.
 
-- If `BRANDING_DIR` is set AND `${BRANDING_DIR}/<requested-path>` exists → serve operator file.
-- Otherwise → serve bundled `public/branding/<requested-path>`.
-- Path traversal guard: requested path must resolve under the chosen base dir (no `../escapes`).
-- Cache headers: `Cache-Control: public, max-age=3600` — moderate cache (operator may swap files during a branding session); browsers won't re-fetch hot icons every minute.
+## Write path
 
-All asset URLs in the codebase route through `/branding/<file>`. The Next route picks the source.
+Three entry points, all converge on `setBrand()` in `src/lib/brand.ts`:
 
-### Bundled files (`public/branding/`)
+| Surface | Path | Cache invalidation |
+| --- | --- | --- |
+| Admin UI (future) | Settings page → `PUT /api/settings` with brand fields | Calls `invalidateBrandCache()` after write — chrome re-renders immediately |
+| CLI | `sudo turf brand:set --owner="Mariposa Lawn Care" --app-name="Turf Tracker"` | No revalidate primitive available outside a request context. 60s cache TTL covers it. |
+| Direct DB | `psql` UPDATE | Same — 60s cache TTL |
 
-Repo ships a single SVG covering every icon need:
+`setBrand()` takes a partial — pass `undefined` to leave a field alone, `null` to clear (where the column is nullable). `appName` is non-nullable; you can change it but you can't clear it.
 
-```text
-public/branding/
-└── icon.svg            (green ground + white "T" — neutral default,
-                         scales to any size, used for favicon + PWA
-                         icons + apple-touch-icon)
-```
+## Consumers
 
-A single SVG works because modern PWA manifests accept `sizes: "any"` + `type: "image/svg+xml"` for unified scaling. Chrome / Firefox / Edge handle it directly; iOS rasterizes for the home-screen icon. Operators who want PNG bytes for tighter control drop them in `BRANDING_DIR` (e.g. `icon-192.png`) and update the manifest entries via a fork; or, more commonly, just override `icon.svg` itself.
+| Surface | Source file | Field |
+| --- | --- | --- |
+| PWA manifest `name` | `src/app/manifest.ts` | `appName` |
+| PWA manifest `short_name` | `src/app/manifest.ts` | `appShortName` |
+| Apple home-screen pin title | `src/app/layout.tsx` — `metadata.appleWebApp.title` | `appShortName` |
+| Browser tab / OS window title | `src/app/layout.tsx` — `metadata.title` | `appName` |
+| App `applicationName` meta | `src/app/layout.tsx` — `metadata.applicationName` | `appName` |
+| Auth chrome heading | `src/app/(auth)/layout.tsx` | `appName` |
+| Auth chrome subtitle | `src/app/(auth)/layout.tsx` | `appOwner` (DOM conditionally rendered) |
+| App-shell nav heading | `src/app/(app)/layout.tsx` | `appName` |
+| Email subject / body brand text | `src/lib/email/mailer.ts` + `src/emails/*.tsx` (threaded as `appName` prop) | `appName` |
+| SMTP `From` display name | `src/lib/email/mailer.ts` | `appName` (override via `SMTP_FROM_NAME` env) |
+
+## Chrome logo asset
+
+`Settings.logoFile` holds a basename. Files live under `/var/lib/turf-tracker/branding/` (pre-created by tmpfiles at `0750 turf-tracker:turf-tracker`). The public `/api/branding/logo` route reads `Settings.logoFile`, validates the resolved path stays under the branding subdir (defense in depth against a malicious DB row pointing at `../../../etc/shadow`), and serves the file with `Cache-Control: public, max-age=31536000, immutable`.
+
+Bundled fallback: when `logoFile` is null, `chromeLogoSrc` resolves to `/branding/icon.svg` (served from `public/branding/` by Next's static handler — no route handler needed). Every deploy renders something sensible even before an operator has uploaded a logo.
 
 ### Operator workflow
 
+Text fields via CLI (admin UI multipart upload + form is a follow-up):
+
 ```bash
-sudo mkdir -p /etc/turf-tracker/branding
-
-# (Optional) Drop a chrome logo if you have a distinct product brand:
-sudo cp /path/to/our-logo.svg /etc/turf-tracker/branding/logo.svg
-
-# (Optional) Replace the bundled icon with your own:
-sudo cp /path/to/icon.svg /etc/turf-tracker/branding/icon.svg
-
-echo 'BRANDING_DIR=/etc/turf-tracker/branding' | sudo tee -a /etc/sysconfig/turf-tracker
-sudo systemctl restart turf-tracker.service
+sudo turf brand:set --owner="Mariposa Lawn Care"
+sudo turf brand:set --app-name="Turf Tracker" --short-name="Turf"
+sudo turf brand:set --clear-owner   # remove the subtitle
 ```
 
-Operator drops only the files they want to override; any file missing from `BRANDING_DIR` falls through to the bundled default. Partial brands (just the logo, generic icon) are supported.
+Custom chrome logo (until the upload admin UI ships, manual):
+
+```bash
+sudo install -m 0644 -o turf-tracker -g turf-tracker /path/to/logo.png \
+    /var/lib/turf-tracker/branding/mariposa.png
+sudo turf brand:set --logo-file=mariposa.png
+```
+
+Verify what's set:
+
+```bash
+sudo -u turf-tracker psql -c 'SELECT * FROM "Settings";'
+```
+
+Running service picks up changes within 60 seconds (the unstable_cache revalidate window). Admin-UI saves invalidate the cache for immediate effect.
 
 ## Out of scope (codebase identity, not brand)
 
@@ -144,26 +129,14 @@ These stay `turf-tracker` regardless of operator brand setting — they're dev/m
 Two different audiences:
 
 - **Codebase identity** (`turf-tracker`) is what developers, the package manager, sysadmins, and the Sentry dashboard see. Stable across deploys; never operator-configurable.
-- **Brand** (`APP_NAME`) is what end-users see in the browser. Operator-configurable per deployment.
+- **Brand** (`appName`) is what end-users see in the browser. Operator-configurable per deployment.
 
 Conflating them — e.g., letting an operator change `package.json#name` — breaks dnf, breaks Sentry release tracking, breaks the deploy contract. They are not the same axis.
 
-## Default-vs-override semantics
+## Pre-history (do not recreate)
 
-The two-layer env mechanism (`/usr/lib/turf-tracker/default.env` shipped + `/etc/sysconfig/turf-tracker` operator override) governs every branding var with no special-casing:
+Earlier shape (pre-v0.7): per-deployment branding lived in env vars (`APP_NAME` / `APP_SHORT_NAME` / `APP_OWNER` / `BRANDING_DIR`) read at module load in `src/lib/runtime-config.ts`, surfaced as `const` exports.
 
-```bash
-# /usr/lib/turf-tracker/default.env   (RPM-owned, do NOT edit)
-APP_NAME=
-APP_SHORT_NAME=
-APP_OWNER=
-BRANDING_DIR=
+That contract failed because Next.js's App Router prerenders pages with no dynamic data dependency at **build time**, not at process boot. The chrome routes (auth layout, app layout, `/manifest.webmanifest`) read the brand consts → static HTML gets generated during `next build` on the GitHub Actions runner → the runner has no operator branding env set, so the build-time fallbacks (`"Turf Tracker"`, `null`, bundled icon URL) get baked into the prerendered HTML → the RPM ships those frozen values → the running operator sets `APP_OWNER` in `/etc/sysconfig/turf-tracker` and restarts, but the HTML on disk in `.next/server/app/*.html` doesn't re-render and the env var never reaches the user.
 
-# /etc/sysconfig/turf-tracker         (operator-owned, optional)
-APP_NAME=Acme Lawn Care
-APP_SHORT_NAME=Acme
-APP_OWNER=Acme Property Management
-BRANDING_DIR=/etc/turf-tracker/branding
-```
-
-Default-env keys ship empty (not "Turf Tracker") so the operator's intent is unambiguous: every key they set in the override is theirs; every key they leave out falls through to the codebase default in `runtime-config.ts`. `turf setup` does not prompt for branding — operators who want to brand edit `/etc/sysconfig/turf-tracker` directly after first install.
+The fix is structural: brand data must be **request-time** so it can't be baked at build time. DB reads via `getBrand()` + `await connection()` are request-time by construction. Restoring an env-based contract is the wrong direction; any future "settings should be env-driven" argument needs to confront this prerender constraint first.

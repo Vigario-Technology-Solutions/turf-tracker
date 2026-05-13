@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import * as Sentry from "@sentry/node";
 import { register as registerBackup } from "./commands/backup";
+import { register as registerBrand } from "./commands/brand";
 import { register as registerRestore } from "./commands/restore";
 import { register as registerSetup } from "./commands/setup";
 import { register as registerStatus } from "./commands/status";
@@ -32,6 +33,7 @@ export function createProgram(): Command {
   });
 
   registerBackup(program);
+  registerBrand(program);
   registerRestore(program);
   registerSetup(program);
   registerStatus(program);
