@@ -1,4 +1,18 @@
 # Changelog
+## [0.6.0](https://github.com/Vigario-Technology-Solutions/turf-tracker/compare/v0.5.2...v0.6.0) (2026-05-13)
+
+### Features
+
+* **branding:** Per-deployment branding contract (APP_NAME etc + asset override)
+* **auth:** Self-serve password reset + nodemailer SMTP transport
+
+### Bug Fixes
+
+* **packaging:** Remove backticks from sysusers comment to unblock %pre
+* **auth:** Password-reset quality pass — rate limit, sentry, unified errors
+* **workflow:** Tag-after-artifact ordering in release job
+* **cli:** Backup/restore strip prisma-only params before pg_dump
+
 ## [0.5.2](https://github.com/Vigario-Technology-Solutions/turf-tracker/compare/v0.5.1...v0.5.2) (2026-05-13)
 
 ### Bug Fixes
