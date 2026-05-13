@@ -20,6 +20,83 @@ export interface PgVersions {
   server: string;
 }
 
+/**
+ * libpq-recognized URL parameter keywords, per
+ * https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-PARAMKEYWORDS.
+ * Anything else passed in the URL query string causes pg_dump /
+ * pg_restore to abort with "invalid URI query parameter" before
+ * connecting — a strict-parsing posture libpq inherited and the
+ * Prisma URL shape doesn't respect.
+ *
+ * Single source of truth for the allowlist; both `pgDump` and
+ * `pgRestore` route through `pgConnString` before spawning.
+ */
+const PGCONN_PARAMS = new Set([
+  "host",
+  "hostaddr",
+  "port",
+  "dbname",
+  "user",
+  "password",
+  "passfile",
+  "channel_binding",
+  "connect_timeout",
+  "client_encoding",
+  "options",
+  "application_name",
+  "fallback_application_name",
+  "keepalives",
+  "keepalives_idle",
+  "keepalives_interval",
+  "keepalives_count",
+  "tcp_user_timeout",
+  "replication",
+  "gssencmode",
+  "sslmode",
+  "requiressl",
+  "sslcompression",
+  "sslcert",
+  "sslkey",
+  "sslpassword",
+  "sslcertmode",
+  "sslrootcert",
+  "sslcrl",
+  "sslcrldir",
+  "sslsni",
+  "requirepeer",
+  "ssl_min_protocol_version",
+  "ssl_max_protocol_version",
+  "krbsrvname",
+  "gsslib",
+  "gssdelegation",
+  "service",
+  "target_session_attrs",
+  "load_balance_hosts",
+]);
+
+/**
+ * Normalize a DATABASE_URL for pg_dump / pg_restore by stripping any
+ * query parameter not in libpq's recognized set. The app's
+ * DATABASE_URL is the same string the Prisma client uses, which
+ * embeds Prisma-only pool tuning params (`connection_limit`,
+ * `pool_timeout`, `schema`, `pgbouncer`, etc). libpq aborts with
+ * "invalid URI query parameter" on any of them — failure surface
+ * for `turf backup` (and any auto-orchestrated cron-driven backup
+ * an operator might bolt on) is the unit failing without an obvious
+ * journal-side hint.
+ *
+ * Allowlist (not denylist) because Prisma's parameter set isn't
+ * versioned-stable — a denylist of known params today silently
+ * breaks the next time Prisma adds a pool knob.
+ */
+export function pgConnString(databaseUrl: string): string {
+  const url = new URL(databaseUrl);
+  for (const key of [...url.searchParams.keys()]) {
+    if (!PGCONN_PARAMS.has(key)) url.searchParams.delete(key);
+  }
+  return url.toString();
+}
+
 /** True when `pg_dump --version` runs cleanly. */
 export async function pgDumpAvailable(): Promise<boolean> {
   try {
@@ -89,7 +166,14 @@ export function pgDump(opts: PgDumpOpts): Promise<void> {
   return new Promise((resolve, reject) => {
     const proc = spawn(
       "pg_dump",
-      ["--format=custom", "--no-owner", "--no-privileges", "-f", opts.outPath, opts.databaseUrl],
+      [
+        "--format=custom",
+        "--no-owner",
+        "--no-privileges",
+        "-f",
+        opts.outPath,
+        pgConnString(opts.databaseUrl),
+      ],
       { stdio: "inherit" },
     );
     proc.on("error", reject);
@@ -121,7 +205,7 @@ export function pgRestore(opts: PgRestoreOpts): Promise<void> {
         "--no-owner",
         "--no-privileges",
         "-d",
-        opts.databaseUrl,
+        pgConnString(opts.databaseUrl),
         opts.inPath,
       ],
       { stdio: "inherit" },
