@@ -260,18 +260,23 @@ jobs:
           git-cliff --bump ${BUMP_ARG:+$BUMP_ARG} --output CHANGELOG.md
           git-cliff --bump ${BUMP_ARG:+$BUMP_ARG} --unreleased --strip header --output RELEASE_NOTES.md
 
-      - name: Commit, tag and push
+      - name: Commit chore(release) locally
         if: steps.version.outputs.skip != 'true'
+        # Commit locally only — no tag, no push. The bump must land in
+        # HEAD before `git archive HEAD` runs in Prepare rpmbuild tree
+        # (spec %build needs package.json at the new version for the
+        # Sentry release id + the artifact filename), but the push of
+        # this commit + the tag waits until the signed RPM is durable
+        # in /srv/dnf-repo-public/. Otherwise: rpmbuild / sign /
+        # publish failures leave a "burned" tag on origin pointing at
+        # no shippable artifact (cf. tylervigario v1.5.2 incident
+        # before commit 892faac — comment-escape regression killed
+        # rpmbuild after the tag had already pushed; needed a manual
+        # fix + a forced bump to v1.5.3 to recover, leaving v1.5.2 as
+        # a tagged-but-empty version on origin forever).
         run: |
           git add package.json package-lock.json CHANGELOG.md
           git commit -m "chore(release): ${{ steps.version.outputs.tag }}"
-          # Annotated tag (-a) — required for `git push --follow-tags`
-          # to actually push it. Lightweight tags are silently skipped
-          # by --follow-tags, which would leave the commit on main and
-          # the tag nowhere (and dnf would have nothing to point a
-          # rollback at, since rollbacks index by git tag).
-          git tag -a ${{ steps.version.outputs.tag }} -m "Release ${{ steps.version.outputs.tag }}"
-          git push origin main --follow-tags
 
       # ---- RPM build ----
       #
@@ -379,6 +384,24 @@ jobs:
           restorecon -F "/srv/dnf-repo-public/${{ steps.rpm.outputs.name }}"
           createrepo_c --update --quiet /srv/dnf-repo-public
           echo "Published /srv/dnf-repo-public/${{ steps.rpm.outputs.name }}"
+
+      # ---- Tag + push (deferred from earlier so origin only advances when
+      # there's a durable artifact in the dnf repo backing the new version) ----
+      - name: Tag and push to origin
+        if: steps.version.outputs.skip != 'true'
+        # Annotated tag (-a) — required for `git push --follow-tags` to
+        # actually push it. Lightweight tags are silently skipped by
+        # --follow-tags, which would leave the commit on main and the
+        # tag nowhere (and dnf would have nothing to point a rollback
+        # at, since rollbacks index by git tag).
+        #
+        # --atomic makes the server-side push of main + the tag all-or-
+        # nothing. Closes the narrower "commit lands but tag doesn't"
+        # failure window that would otherwise replace the bigger
+        # pre-publish-tag bug.
+        run: |
+          git tag -a ${{ steps.version.outputs.tag }} -m "Release ${{ steps.version.outputs.tag }}"
+          git push origin main --atomic --follow-tags
 
       # ---- GitHub Release ----
       - name: Create GitHub Release with RPM asset
