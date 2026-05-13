@@ -1,4 +1,25 @@
 # Changelog
+## [0.5.0](https://github.com/Vigario-Technology-Solutions/turf-tracker/compare/v0.4.0...v0.5.0) (2026-05-13)
+
+### Features
+
+* **dev:** Household seed scenario + auditCli helper for destructive ops
+* **packaging:** Operator-driven upgrades with opt-in auto-orchestration
+* **cli:** Setup, backup, restore + close upgrade.path daemon-reload race
+* **observability:** Wire Sentry init for CLI + seed runtimes
+
+### Bug Fixes
+
+* **cli:** Turf setup first-install user prompt no longer silently skips
+* **observability:** External OTel monkey-patch chain + build-on-prod cutover docs
+* **ci:** Two release-workflow bugs in "Determine next version"
+
+### Refactoring
+
+* **deploy:** Standardize on vis-daily-tracker build-on-prod contract
+* **packaging:** Adopt canonical RPM contract from tylervigario
+* **cli:** Externalize @sentry/* and zod from CLI + seed bundles
+
 ## [0.4.0](https://github.com/Vigario-Technology-Solutions/turf-tracker/compare/v0.3.0...v0.4.0) (2026-05-09)
 
 ### Features
