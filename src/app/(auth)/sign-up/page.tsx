@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { SignUpForm } from "./sign-up-form";
 
-export const metadata = { title: "Create account — Turf Tracker" };
+export const metadata = { title: "Create account" };
 
 export default function SignUpPage() {
   return (

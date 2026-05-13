@@ -6,7 +6,7 @@ import { canAccessArea } from "@/lib/auth/guards";
 import { ROLE_CONTRIBUTOR } from "@/lib/constants";
 import { getLookups } from "@/lib/lookups";
 
-export const metadata = { title: "Apply — Turf Tracker" };
+export const metadata = { title: "Apply" };
 
 interface Props {
   params: Promise<{ id: string; areaId: string }>;

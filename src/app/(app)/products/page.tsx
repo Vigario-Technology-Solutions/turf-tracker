@@ -3,7 +3,7 @@ import prisma from "@/lib/db";
 import { requireSessionUser } from "@/lib/auth/server-session";
 import { getLookups } from "@/lib/lookups";
 
-export const metadata = { title: "Products — Turf Tracker" };
+export const metadata = { title: "Products" };
 
 export default async function ProductsPage() {
   const user = await requireSessionUser();

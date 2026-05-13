@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { SignInForm } from "./sign-in-form";
 
-export const metadata = { title: "Sign in — Turf Tracker" };
+export const metadata = { title: "Sign in" };
 
 export default function SignInPage() {
   return (

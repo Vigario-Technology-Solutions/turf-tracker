@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth/server-session";
+import { APP_NAME, APP_OWNER } from "@/lib/runtime-config";
 
 /**
  * Layout for the public auth pages. If the visitor already has a valid
@@ -11,6 +12,12 @@ export default async function AuthLayout({ children }: { children: React.ReactNo
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-neutral-50 px-4">
+      {/* Branding chrome — APP_NAME is the canonical title; APP_OWNER */}
+      {/* (operator company) is the subtitle, omitted entirely when unset. */}
+      <div className="mb-4 text-center">
+        <h1 className="text-xl font-semibold text-neutral-900">{APP_NAME}</h1>
+        {APP_OWNER && <p className="mt-0.5 text-sm text-neutral-600">{APP_OWNER}</p>}
+      </div>
       <div className="w-full max-w-sm rounded border border-neutral-200 bg-white p-6 shadow-sm">
         {children}
       </div>

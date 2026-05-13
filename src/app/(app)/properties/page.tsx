@@ -2,7 +2,7 @@ import Link from "next/link";
 import prisma from "@/lib/db";
 import { requireSessionUser } from "@/lib/auth/server-session";
 
-export const metadata = { title: "Properties — Turf Tracker" };
+export const metadata = { title: "Properties" };
 
 export default async function PropertiesPage() {
   const user = await requireSessionUser();

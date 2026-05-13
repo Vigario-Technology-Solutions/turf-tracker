@@ -6,7 +6,7 @@ import { ROLE_CONTRIBUTOR } from "@/lib/constants";
 import { createSoilTest } from "../_actions";
 import { SoilTestForm } from "../soil-test-form";
 
-export const metadata = { title: "New soil test — Turf Tracker" };
+export const metadata = { title: "New soil test" };
 
 interface Props {
   params: Promise<{ id: string; areaId: string }>;

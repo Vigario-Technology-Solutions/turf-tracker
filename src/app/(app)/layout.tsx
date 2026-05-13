@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireSessionUser } from "@/lib/auth/server-session";
+import { APP_NAME } from "@/lib/runtime-config";
 import { SignOutButton } from "./sign-out-button";
 
 /**
@@ -16,7 +17,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <header className="border-b border-neutral-200 bg-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
           <Link href="/" className="font-semibold">
-            Turf Tracker
+            {APP_NAME}
           </Link>
           <div className="flex items-center gap-3 text-sm">
             <Link href="/profile" className="text-neutral-600 hover:text-neutral-900">

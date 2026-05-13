@@ -4,7 +4,7 @@ import { getSerializedLookups } from "@/lib/lookups";
 import { createProduct } from "../_actions";
 import { ProductForm } from "../product-form";
 
-export const metadata = { title: "New product — Turf Tracker" };
+export const metadata = { title: "New product" };
 
 export default async function NewProductPage() {
   await requireSessionUser();

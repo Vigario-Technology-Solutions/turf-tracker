@@ -4,7 +4,7 @@ import { requireSessionUser } from "@/lib/auth/server-session";
 import { computeAreasStatus } from "@/lib/rules";
 import { AreaStatusCard } from "./area-status-card";
 
-export const metadata = { title: "What's next? — Turf Tracker" };
+export const metadata = { title: "What's next?" };
 
 /**
  * Home view — the "What's next?" surface. Per SPEC §0 / §6.7: every

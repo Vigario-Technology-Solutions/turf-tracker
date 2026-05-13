@@ -3,7 +3,7 @@ import { requireSessionUser } from "@/lib/auth/server-session";
 import { ProfileForm } from "./profile-form";
 import { PasswordForm } from "./password-form";
 
-export const metadata = { title: "Profile — Turf Tracker" };
+export const metadata = { title: "Profile" };
 
 /**
  * Profile editor. Two independent cards on one page:

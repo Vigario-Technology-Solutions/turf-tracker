@@ -7,7 +7,7 @@ import { getSerializedLookups } from "@/lib/lookups";
 import { createArea } from "../_actions";
 import { AreaForm } from "../area-form";
 
-export const metadata = { title: "New area — Turf Tracker" };
+export const metadata = { title: "New area" };
 
 interface Props {
   params: Promise<{ id: string }>;

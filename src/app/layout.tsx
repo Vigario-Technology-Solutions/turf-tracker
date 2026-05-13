@@ -1,17 +1,30 @@
 import type { Metadata, Viewport } from "next";
+import { APP_NAME, APP_SHORT_NAME } from "@/lib/runtime-config";
 import { SerwistProvider } from "./serwist";
 import { ServiceWorkerUpdater } from "./sw-updater";
 import "./globals.css";
 
+// title.template wraps every page's `metadata.title` as
+// "<page> — <APP_NAME>", so per-page metadata only needs the page-
+// specific part. `default` is the fallback when a child sets nothing.
+// manifest path matches Next's MetadataRoute.Manifest convention —
+// src/app/manifest.ts serves /manifest.webmanifest.
 export const metadata: Metadata = {
-  applicationName: "Turf Tracker",
-  title: "Turf Tracker",
+  applicationName: APP_NAME,
+  title: {
+    default: APP_NAME,
+    template: `%s — ${APP_NAME}`,
+  },
   description: "Field decision tool for area-based plant nutrition",
-  manifest: "/manifest.json",
+  manifest: "/manifest.webmanifest",
+  icons: {
+    icon: "/branding/icon.svg",
+    apple: "/branding/icon.svg",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Turf Tracker",
+    title: APP_SHORT_NAME,
   },
 };
 
