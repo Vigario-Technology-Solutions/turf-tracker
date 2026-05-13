@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import * as Sentry from "@sentry/nextjs";
 import prisma from "@/lib/db";
 import { generateRawToken, hashToken, buildIdentifier, tokenExpiry } from "@/lib/auth/reset-token";
+import { callerIp, checkRateLimit, rateLimitHeaders } from "@/lib/auth/rate-limit";
 import { sendPasswordResetEmail } from "@/lib/email/mailer";
 
 const requestSchema = z.object({
@@ -27,6 +29,18 @@ const requestSchema = z.object({
  * upstream would be cleaner, and is the operator's job.
  */
 export async function POST(request: Request): Promise<NextResponse> {
+  // Rate-limit before parsing the body. 5 requests/hour/IP — generous
+  // enough that a legitimate user retrying after a typo or two won't
+  // trip it, tight enough that an attacker can't spam reset emails
+  // at arbitrary addresses from one source.
+  const rl = checkRateLimit(`reset-request:${callerIp(request.headers)}`, 5, 3600);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { ok: false, error: "Too many reset requests. Please try again later." },
+      { status: 429, headers: rateLimitHeaders(rl) },
+    );
+  }
+
   const raw: unknown = await request.json().catch(() => null);
   const result = requestSchema.safeParse(raw);
   if (!result.success) {
@@ -37,10 +51,16 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   // Fire-and-forget so response shape + latency don't leak account
-  // existence. We don't await — the void + catch handles unhandled-
-  // rejection noise without blocking the response.
+  // existence. We don't await — the void + catch sinks unhandled
+  // rejection noise AND captures to Sentry so operators see SMTP
+  // timeouts, render failures, or DB hiccups in the dispatch path
+  // (without it, failures only land in the journal as console.error
+  // and never surface in the dashboard).
   void dispatchReset(result.data.email, new URL(request.url).origin).catch((err) => {
     console.error("[PasswordReset] request dispatch failed:", err);
+    Sentry.captureException(err, {
+      tags: { area: "auth", flow: "password-reset-request" },
+    });
   });
 
   return NextResponse.json({
@@ -88,7 +108,27 @@ async function dispatchReset(email: string, origin: string): Promise<void> {
 
   await sendPasswordResetEmail({
     to: user.email,
-    greetingName: user.displayName ?? user.name ?? user.email,
+    greetingName: pickGreetingName(user),
     resetUrl,
   });
+}
+
+/**
+ * Pick a non-empty greeting name. The User schema defaults
+ * `name: ""`, and Better-Auth's signup writes `""` when the input
+ * omits a name — so `displayName ?? name ?? email` returns `""`
+ * (not the email) because `??` only coalesces null/undefined.
+ * Filter empties explicitly so the email body never reads "Hi ,".
+ */
+function pickGreetingName(user: {
+  displayName: string | null;
+  name: string;
+  email: string;
+}): string {
+  for (const candidate of [user.displayName, user.name]) {
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+  }
+  return user.email;
 }
