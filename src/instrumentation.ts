@@ -22,6 +22,12 @@ export async function register() {
     await import("./sentry.server.config");
     const { validateRuntimeConfig } = await import("@/lib/runtime-config");
     validateRuntimeConfig();
+    // One-line SMTP-state surface so operators reading the journal at
+    // boot see whether outbound email is wired — "no SMTP configured"
+    // is a recoverable state (only password reset + invite degrade,
+    // not the whole app), but it's worth advertising.
+    const { logSmtpStatus } = await import("@/lib/email/mailer");
+    logSmtpStatus();
     return;
   }
 

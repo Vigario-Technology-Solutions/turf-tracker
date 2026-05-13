@@ -11,12 +11,14 @@ export default function SignInPage() {
         <p className="mt-1 text-sm text-neutral-600">Welcome back.</p>
       </div>
       <SignInForm />
-      <p className="text-sm text-neutral-600">
-        No account?{" "}
+      <div className="flex justify-between text-sm text-neutral-600">
         <Link href="/sign-up" className="font-medium underline">
-          Create one
+          Create account
         </Link>
-      </p>
+        <Link href="/forgot" className="underline">
+          Forgot password?
+        </Link>
+      </div>
     </div>
   );
 }
