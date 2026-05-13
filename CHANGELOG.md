@@ -1,4 +1,11 @@
 # Changelog
+## [0.5.2](https://github.com/Vigario-Technology-Solutions/turf-tracker/compare/v0.5.1...v0.5.2) (2026-05-13)
+
+### Bug Fixes
+
+* **cli:** Turf setup is lossless on re-run + writes to .env in dev
+* **packaging:** Parameterize backend port in apache snippet
+
 ## [0.5.0](https://github.com/Vigario-Technology-Solutions/turf-tracker/compare/v0.4.0...v0.5.0) (2026-05-13)
 
 ### Features
