@@ -346,18 +346,23 @@ jobs:
         run: |
           # Sign via sudo: github-runner has a narrow sudoers rule
           # (/etc/sudoers.d/github-runner-rpmsign) allowing
-          # `/usr/bin/rpmsign --addsign` on paths under
+          # `/usr/local/sbin/rpmsign-public --addsign` on paths under
           # /var/lib/github-runner/runner/_work/_temp/rpmbuild/RPMS/x86_64/*.rpm.
-          # Actual signing runs as root, which reads /root/.rpmmacros
-          # (binds to the public-signer subkey on /etc/server-admin/gnupg
-          # for this repo's workflow — the two subkeys are cross-signed by
-          # the master, so verification through RPM-GPG-KEY-server-admin
-          # works for both).
-          # No signing-key material lives in this runner's keyring or in
-          # any GitHub secret — compromise scope of github-runner is "can
-          # sign an RPM at the sudoers-allowed path," not "can take the
-          # subkey elsewhere."
-          sudo /usr/bin/rpmsign --addsign "${{ steps.rpm.outputs.path }}"
+          # The wrapper hardcodes the public-signer subkey fingerprint
+          # (4851F61DD01C842F) via rpmsign --define, then execs
+          # /usr/bin/rpmsign --addsign. Picking the subkey is the
+          # wrapper's job — the runner can't override which key signs
+          # because the sudoers rule pins the wrapper path, not a flag.
+          # The private-signer subkey is reachable only via a separate
+          # sudoers entry for /usr/bin/rpmsign that website + pipetree
+          # use; the two subkeys are cross-signed by the master, so
+          # verification through RPM-GPG-KEY-server-admin works for
+          # either signer. No signing-key material lives in this
+          # runner's keyring or in any GitHub secret — compromise scope
+          # of github-runner is "can sign an RPM with the public-signer
+          # at the sudoers-allowed path," not "can take the subkey
+          # elsewhere."
+          sudo /usr/local/sbin/rpmsign-public --addsign "${{ steps.rpm.outputs.path }}"
           rpm -K "${{ steps.rpm.outputs.path }}"
 
       # ---- Publish to /srv/dnf-repo-public/ (WAN, https://repo.tylervigario.com/) ----
