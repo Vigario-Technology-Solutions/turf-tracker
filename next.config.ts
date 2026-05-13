@@ -127,6 +127,25 @@ export default withSentryConfig(nextConfig, {
   // debug ergonomics.
   widenClientFileUpload: true,
 
+  sourcemaps: {
+    // Delete every .map file from .next/ after the Sentry plugin has
+    // uploaded it. Maps live on Sentry's servers for symbolication;
+    // the duplicate copies in .next/server/ + .next/static/ otherwise
+    // add ~30 MB of dead weight to the RPM and leak readable source
+    // to anyone who can read the app tree on prod.
+    //
+    // Why this explicit pattern instead of `deleteSourcemapsAfterUpload:
+    // true`: the plugin's built-in delete-after-upload defaults to
+    // skipping server builds (webpack-nodejs / webpack-edge) because
+    // Vercel's serverless runtime needed them at request time
+    // (getsentry/sentry-javascript#13099). We're on systemd + RPM —
+    // Next runs as a long-lived node process, never re-reads .map
+    // files after build. The Vercel guard doesn't apply, so we
+    // override with an explicit glob that covers both server and
+    // client maps.
+    filesToDeleteAfterUpload: ["./.next/**/*.map"],
+  },
+
   // Same-origin tunnel for events. Two reasons:
   //   1. Bypasses ad-blockers that block requests to *.sentry.io.
   //   2. Our CSP `connect-src 'self'` doesn't allow sentry.io
