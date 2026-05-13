@@ -21,9 +21,10 @@ import { systemctlIsActive, systemctlRun } from "../../shared/systemctl";
  *     single command. Requires root.
  *
  *   - **Dev host** (no RPM template). Template defaults to
- *     `./.env.example`, output defaults to stdout. No systemctl
- *     orchestration — the operator wires the result into their dev
- *     workflow themselves.
+ *     `./.env.example`, output defaults to `./.env`. No systemctl
+ *     orchestration — re-running just audits + edits the local env
+ *     file in place. Pass `--output -` to print to stdout instead
+ *     (useful for previewing).
  *
  * Explicit `--template` / `--output` overrides the auto-detection in
  * either mode.
@@ -38,25 +39,32 @@ import { systemctlIsActive, systemctlRun } from "../../shared/systemctl";
  *   - Otherwise VALUE is a concrete default; offer it as the prompt
  *     default (operator presses enter to accept).
  *
- * Commented-out `# KEY=value` lines are left alone — those are
- * optional / example-only vars that the operator can fill in later.
+ * Commented-out `# KEY=value` lines in the TEMPLATE are skipped —
+ * those are optional / example-only vars that the template documents
+ * but doesn't force the operator to set.
  *
- * Re-running setup on an existing env file is idempotent and supports
- * audit + edit:
+ * Re-running setup on an existing env file is idempotent, lossless,
+ * and supports audit + edit:
  *
- *   - Non-secret keys with an existing value get prompted with the
- *     existing value as the default. Operator presses enter to keep,
- *     types to change. Lets the operator audit current config (see
- *     what's set) and rotate specific values without editing the file
- *     by hand or losing other state.
+ *   - The EXISTING output file is preserved line-by-line. Every
+ *     comment, blank line, and key-value pair stays — including
+ *     keys not mentioned in the current template (operator
+ *     additions, settings carried over from an older release that
+ *     dropped the var, etc.). Only template-known keys are edited
+ *     in place; novel keys get appended.
+ *   - Non-secret template keys with an existing value get prompted
+ *     with the existing value as the default. Operator presses
+ *     enter to keep, types to change. Lets the operator audit
+ *     current config (see what's set) and rotate specific values
+ *     without editing the file by hand or losing other state.
  *   - Secret keys (auto-generated 32-byte hex) are NEVER auto-rotated
  *     on re-run and their existing values are NEVER shown in the
  *     prompt (would leak through terminal scrollback / shell history).
  *     Preserved silently and reported in a summary line. Pass
  *     `--rotate` to regenerate every secret key.
- *   - Newly-introduced keys since the file was last written get
- *     prompted normally — re-running after a release that adds a new
- *     required var just asks about the new one.
+ *   - Newly-introduced template keys since the file was last written
+ *     get prompted and appended — re-running after a release that
+ *     adds a new required var just asks about the new one.
  *
  * `--non-interactive` fails fast if any prompt would be needed (for
  * ansible / automation). On RPM hosts it also skips the systemctl
@@ -65,6 +73,7 @@ import { systemctlIsActive, systemctlRun } from "../../shared/systemctl";
 
 const RPM_TEMPLATE_PATH = "/usr/lib/turf-tracker/default.env";
 const RPM_SYSCONFIG_PATH = "/etc/sysconfig/turf-tracker";
+const DEV_ENV_PATH = ".env";
 
 // Keys that get auto-generated crypto secrets. Explicit list over
 // heuristics so a future key named like FOO_SECRET_KEY isn't silently
@@ -103,6 +112,14 @@ interface TemplateEntry {
   value: string;
 }
 
+/**
+ * Existing-file parse representation. Preserves every line in order —
+ * comments, blank lines, and KEY=value pairs — so re-run rewrites
+ * are lossless. The template parser is narrower (template entries
+ * drive the prompt flow); this one is structural.
+ */
+type FileLine = { kind: "raw"; text: string } | { kind: "value"; key: string; value: string };
+
 function parseTemplate(src: string): TemplateEntry[] {
   const entries: TemplateEntry[] = [];
   for (const line of src.split(/\r?\n/)) {
@@ -115,18 +132,35 @@ function parseTemplate(src: string): TemplateEntry[] {
   return entries;
 }
 
+function parseFile(src: string): FileLine[] {
+  const lines: FileLine[] = [];
+  const rawLines = src.split(/\r?\n/);
+  // Drop the empty trailing entry produced by a final newline so we
+  // don't preserve a phantom blank line on round-trip.
+  if (rawLines.length > 0 && rawLines[rawLines.length - 1] === "") {
+    rawLines.pop();
+  }
+  for (const line of rawLines) {
+    const match = /^([A-Z0-9_]+)=(.*)$/.exec(line);
+    if (match) {
+      lines.push({ kind: "value", key: match[1], value: match[2] });
+    } else {
+      lines.push({ kind: "raw", text: line });
+    }
+  }
+  return lines;
+}
+
+function serializeFile(lines: FileLine[]): string {
+  return lines.map((l) => (l.kind === "value" ? `${l.key}=${l.value}` : l.text)).join("\n") + "\n";
+}
+
 function isPlaceholder(value: string): boolean {
   return PLACEHOLDER_PATTERNS.some((p) => p.test(value));
 }
 
 function hex(): string {
   return randomBytes(32).toString("hex");
-}
-
-function formatEnvFile(entries: TemplateEntry[]): string {
-  // KEY=value lines, newline-terminated. Matches systemd
-  // EnvironmentFile format (which is also .env-compatible).
-  return entries.map((e) => `${e.key}=${e.value}`).join("\n") + "\n";
 }
 
 async function run(opts: SetupOpts): Promise<void> {
@@ -154,21 +188,29 @@ async function run(opts: SetupOpts): Promise<void> {
   const template = parseTemplate(readFileSync(templatePath, "utf8"));
 
   // Output destination. Explicit --output wins. `--output -` forces
-  // stdout (standard UNIX convention) — useful on RPM hosts when the
-  // operator wants to preview the env file before writing it. Otherwise
-  // infer from RPM-host detection; otherwise undefined (stdout).
+  // stdout (standard UNIX convention) — useful when the operator
+  // wants to preview the env file before writing it. Otherwise infer
+  // from host: prod writes to /etc/sysconfig/turf-tracker (root-owned,
+  // strict perms); dev writes to ./.env in the project root.
   const outPath =
-    opts.output === "-" ? undefined : (opts.output ?? (isRpmHost ? RPM_SYSCONFIG_PATH : undefined));
+    opts.output === "-"
+      ? undefined
+      : (opts.output ?? (isRpmHost ? RPM_SYSCONFIG_PATH : DEV_ENV_PATH));
 
-  // Read existing output file for idempotent merge.
+  // Read existing output file structurally — every line preserved
+  // (comments, blanks, KEY=value, non-template keys). The merge
+  // updates template-known keys in place and appends novel ones;
+  // operator additions (custom flags outside the template, settings
+  // carried over from an older release that dropped the var, etc.)
+  // survive unchanged.
+  const existingLines: FileLine[] =
+    outPath && existsSync(outPath) ? parseFile(readFileSync(outPath, "utf8")) : [];
   const existingByKey = new Map<string, string>();
-  if (outPath && existsSync(outPath)) {
-    for (const entry of parseTemplate(readFileSync(outPath, "utf8"))) {
-      existingByKey.set(entry.key, entry.value);
-    }
+  for (const line of existingLines) {
+    if (line.kind === "value") existingByKey.set(line.key, line.value);
   }
 
-  const resolved: TemplateEntry[] = [];
+  const resolvedByKey = new Map<string, string>();
   const generatedSecrets: string[] = [];
   const preservedSecrets: string[] = [];
   const prompted: string[] = [];
@@ -182,11 +224,11 @@ async function run(opts: SetupOpts): Promise<void> {
     // only path to regenerate.
     if (SECRET_KEYS.has(entry.key)) {
       if (hasExisting && !opts.rotate) {
-        resolved.push({ key: entry.key, value: existing });
+        resolvedByKey.set(entry.key, existing);
         preservedSecrets.push(entry.key);
         continue;
       }
-      resolved.push({ key: entry.key, value: hex() });
+      resolvedByKey.set(entry.key, hex());
       generatedSecrets.push(entry.key);
       continue;
     }
@@ -197,11 +239,11 @@ async function run(opts: SetupOpts): Promise<void> {
     // audit affordance is the point.
     if (hasExisting) {
       if (opts.nonInteractive) {
-        resolved.push({ key: entry.key, value: existing });
+        resolvedByKey.set(entry.key, existing);
         continue;
       }
       const answer = await text(entry.key, { default: existing });
-      resolved.push({ key: entry.key, value: answer });
+      resolvedByKey.set(entry.key, answer);
       if (answer !== existing) prompted.push(entry.key);
       continue;
     }
@@ -211,7 +253,7 @@ async function run(opts: SetupOpts): Promise<void> {
       const answer = opts.nonInteractive
         ? entry.value
         : await text(entry.key, { default: entry.value });
-      resolved.push({ key: entry.key, value: answer });
+      resolvedByKey.set(entry.key, answer);
       if (!opts.nonInteractive && answer !== entry.value) prompted.push(entry.key);
       continue;
     }
@@ -224,11 +266,25 @@ async function run(opts: SetupOpts): Promise<void> {
     const answer = await text(entry.key, {
       validate: (v) => (v.trim() ? null : "Required."),
     });
-    resolved.push({ key: entry.key, value: answer });
+    resolvedByKey.set(entry.key, answer);
     prompted.push(entry.key);
   }
 
-  const output = formatEnvFile(resolved);
+  // Merge resolved values back into the existing line structure.
+  // Template-known keys that already exist are edited in place;
+  // novel keys are appended. Every other line (comments, blanks,
+  // non-template keys) is preserved verbatim.
+  const outputLines: FileLine[] = [...existingLines];
+  for (const [key, value] of resolvedByKey) {
+    const idx = outputLines.findIndex((l) => l.kind === "value" && l.key === key);
+    if (idx >= 0) {
+      outputLines[idx] = { kind: "value", key, value };
+    } else {
+      outputLines.push({ kind: "value", key, value });
+    }
+  }
+
+  const output = serializeFile(outputLines);
 
   if (outPath) {
     const resolvedOut = resolve(outPath);
