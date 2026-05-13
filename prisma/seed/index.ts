@@ -119,6 +119,17 @@ async function main() {
     });
   }
 
+  // Singleton Settings row. The migration that created the table
+  // INSERTed id = 1 with column defaults applied; this upsert is
+  // idempotent — no-ops on a freshly migrated DB, re-seeds the row
+  // with defaults if it was ever manually deleted. Update branch is
+  // `{}` so any operator-customized values are preserved.
+  await prisma.settings.upsert({
+    where: { id: 1 },
+    create: { id: 1 },
+    update: {},
+  });
+
   console.log("✓ Seed complete");
 }
 

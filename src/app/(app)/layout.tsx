@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { requireSessionUser } from "@/lib/auth/server-session";
-import { APP_NAME } from "@/lib/runtime-config";
+import { getBrand } from "@/lib/brand";
 import { SignOutButton } from "./sign-out-button";
 
 /**
@@ -10,14 +10,14 @@ import { SignOutButton } from "./sign-out-button";
  * primary section links.
  */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const user = await requireSessionUser();
+  const [user, brand] = await Promise.all([requireSessionUser(), getBrand()]);
 
   return (
     <div className="min-h-screen flex flex-col">
       <header className="border-b border-neutral-200 bg-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
           <Link href="/" className="font-semibold">
-            {APP_NAME}
+            {brand.appName}
           </Link>
           <div className="flex items-center gap-3 text-sm">
             <Link href="/profile" className="text-neutral-600 hover:text-neutral-900">

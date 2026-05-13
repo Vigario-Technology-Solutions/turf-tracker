@@ -1,32 +1,35 @@
 import type { Metadata, Viewport } from "next";
-import { APP_NAME, APP_SHORT_NAME } from "@/lib/runtime-config";
+import { getBrand } from "@/lib/brand";
 import { SerwistProvider } from "./serwist";
 import { ServiceWorkerUpdater } from "./sw-updater";
 import "./globals.css";
 
 // title.template wraps every page's `metadata.title` as
-// "<page> — <APP_NAME>", so per-page metadata only needs the page-
+// "<page> — <appName>", so per-page metadata only needs the page-
 // specific part. `default` is the fallback when a child sets nothing.
 // manifest path matches Next's MetadataRoute.Manifest convention —
 // src/app/manifest.ts serves /manifest.webmanifest.
-export const metadata: Metadata = {
-  applicationName: APP_NAME,
-  title: {
-    default: APP_NAME,
-    template: `%s — ${APP_NAME}`,
-  },
-  description: "Field decision tool for area-based plant nutrition",
-  manifest: "/manifest.webmanifest",
-  icons: {
-    icon: "/branding/icon.svg",
-    apple: "/branding/icon.svg",
-  },
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "default",
-    title: APP_SHORT_NAME,
-  },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const brand = await getBrand();
+  return {
+    applicationName: brand.appName,
+    title: {
+      default: brand.appName,
+      template: `%s — ${brand.appName}`,
+    },
+    description: "Field decision tool for area-based plant nutrition",
+    manifest: "/manifest.webmanifest",
+    icons: {
+      icon: "/branding/icon.svg",
+      apple: "/branding/icon.svg",
+    },
+    appleWebApp: {
+      capable: true,
+      statusBarStyle: "default",
+      title: brand.appShortName,
+    },
+  };
+}
 
 export const viewport: Viewport = {
   themeColor: "#171717",

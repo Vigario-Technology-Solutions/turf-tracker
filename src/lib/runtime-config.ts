@@ -11,62 +11,13 @@
  * enforces. Adding a required var = add to the JSON, add a format
  * validator below.
  *
- * Branding consts: operator-controlled identity that disjoins
- * codebase identity from per-deployment branding. See
- * docs/platform/branding.md.
- *
- *   APP_NAME        — full product name (browser title via the root
- *                     layout's title.template, nav heading, emails,
- *                     manifest `name`)
- *   APP_SHORT_NAME  — constrained-space variant (manifest `short_name`,
- *                     iOS home-screen pin title)
- *   APP_OWNER       — entity providing the service (auth-page
- *                     subtitle). Null when unset — no subtitle.
- *   BRANDING_DIR    — operator-managed asset directory. When set,
- *                     `/branding/<file>` serves from there first,
- *                     falls back to bundled `public/branding/`.
- *                     Null when unset = always-bundled.
- *
- * `||` (not `??`) on APP_OWNER + BRANDING_DIR so an explicitly empty
- * string in sysconfig reads as unset — the standard env-file
- * convention. APP_SHORT_NAME reads the `APP_NAME` const (not
- * process.env a second time) so the fallback is deterministic
- * regardless of variable evaluation order.
- *
- * The explicit `string` annotation prevents TS from narrowing to a
- * literal type and breaking interpolation typing downstream.
+ * Per-deployment branding lives in the typed Settings row, not env.
+ * Consumers read via src/lib/brand.ts's getBrand() / readBrand().
+ * Env-driven branding couldn't survive Next.js's build-time
+ * prerender of the chrome routes — see docs/platform/branding.md.
  */
 
-import { existsSync } from "node:fs";
-import path from "node:path";
 import REQUIRED_ENV from "./required-env.json";
-
-export const APP_NAME: string = process.env.APP_NAME ?? "Turf Tracker";
-export const APP_SHORT_NAME: string = process.env.APP_SHORT_NAME ?? APP_NAME;
-export const APP_OWNER: string | null = process.env.APP_OWNER || null;
-export const BRANDING_DIR: string | null = process.env.BRANDING_DIR || null;
-
-/**
- * URL the auth chrome renders for the brand image. The "logo" is a
- * separate brand asset from the PWA icon set — operators with a
- * distinct logo drop it at `${BRANDING_DIR}/logo.svg` (or .png);
- * deploys without one fall back to the bundled icon so the chrome
- * still renders something sensible. Frozen at startup; operators who
- * add a logo file post-boot need a service restart.
- *
- * The codebase ships NO bundled `logo.*` — the chrome logo is
- * operator-supplied (or implicit via the icon fallback).
- */
-export const CHROME_LOGO_SRC: string = ((): string => {
-  if (BRANDING_DIR) {
-    for (const ext of ["svg", "png"] as const) {
-      if (existsSync(path.join(BRANDING_DIR, `logo.${ext}`))) {
-        return `/branding/logo.${ext}`;
-      }
-    }
-  }
-  return "/branding/icon.svg";
-})();
 
 const FORMAT_CHECKS: Record<string, (v: string) => void> = {
   DATABASE_URL: validateDatabaseUrl,

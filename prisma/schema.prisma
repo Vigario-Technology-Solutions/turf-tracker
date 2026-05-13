@@ -402,3 +402,30 @@ model Recommendation {
   @@unique([areaId, ruleId])
   @@index([areaId])
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// Singleton app settings — per-deployment configuration an operator
+// can change at runtime (admin UI / `turf brand:set` CLI).
+//
+// ONE row, id = 1, enforced by a CHECK constraint in the migration.
+// Schema-as-spec: every operator-configurable knob is a column here;
+// adding a setting is ALTER TABLE ADD COLUMN + admin-form field.
+//
+// Discipline: this table is for **per-deployment singleton config**.
+// Per-property settings live on Property. Per-user prefs live on
+// User. Per-entity-anything-with-cardinality-greater-than-1 = its
+// own table. That separation is the kitchen-sink defense.
+// ─────────────────────────────────────────────────────────────────────
+
+model Settings {
+  id              Int      @id
+  // Per-deployment branding. Spec: docs/platform/branding.md.
+  appName         String   @default("Turf Tracker")
+  appShortName    String?
+  appOwner        String?
+  // Operator-uploaded chrome logo. Filename under
+  // /var/lib/turf-tracker/branding/. Null = chrome falls back to
+  // the bundled /branding/icon.svg.
+  logoFile        String?
+  updatedAt       DateTime @updatedAt
+}

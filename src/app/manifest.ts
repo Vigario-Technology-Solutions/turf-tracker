@@ -1,24 +1,16 @@
 import type { MetadataRoute } from "next";
-import { APP_NAME, APP_SHORT_NAME } from "@/lib/runtime-config";
-
-// Force per-request evaluation so the operator's APP_NAME /
-// APP_SHORT_NAME at runtime wins over whatever was set during the
-// build. Without this, Next prerenders the manifest statically using
-// build-time env — the RPM would ship with the build's brand and
-// ignore /etc/sysconfig overrides. The route is hit once per browser
-// install (cached aggressively after) so the dynamic-rendering cost
-// is negligible.
-export const dynamic = "force-dynamic";
+import { getBrand } from "@/lib/brand";
 
 /**
  * PWA manifest served at /manifest.webmanifest by the App Router.
  *
- * Why a route, not /public/manifest.json: brand is per-deployment env
- * (APP_NAME / APP_SHORT_NAME — see docs/platform/branding.md), so the
- * manifest can't be static. The consts are frozen at module-load, so
- * the per-request cost is "build a small object" — negligible,
- * especially against the once-per-install browser cache for manifest
- * fetches.
+ * Why a route, not /public/manifest.json: brand fields (`name`,
+ * `short_name`) are per-deployment DB-backed config (see
+ * docs/platform/branding.md), so the manifest can't be static. Each
+ * request hits getBrand() which is unstable_cache-backed — sub-ms
+ * after the first request, negligible against the once-per-install
+ * browser cache for manifest fetches. getBrand()'s `await
+ * connection()` opts this route out of prerender automatically.
  *
  * `description`, `theme_color`, `background_color`, `display`, `id`,
  * `categories`, `lang`, `dir`, `launch_handler`, `scope`, and the
@@ -28,15 +20,14 @@ export const dynamic = "force-dynamic";
  *
  * Icons: a single SVG at /branding/icon.svg covers every size + both
  * purposes (any + maskable) via `sizes: "any"` + `type:
- * "image/svg+xml"`. The SVG is bundled at public/branding/ and routed
- * through src/app/branding/[...path]/route.ts so an operator's
- * BRANDING_DIR override transparently swaps the icon without code
- * changes.
+ * "image/svg+xml"`. The SVG is bundled at public/branding/ and Next
+ * serves it as a static asset.
  */
-export default function manifest(): MetadataRoute.Manifest {
+export default async function manifest(): Promise<MetadataRoute.Manifest> {
+  const brand = await getBrand();
   return {
-    name: APP_NAME,
-    short_name: APP_SHORT_NAME,
+    name: brand.appName,
+    short_name: brand.appShortName,
     description: "Field decision tool for area-based plant nutrition",
     id: "turf-tracker",
     lang: "en-US",
