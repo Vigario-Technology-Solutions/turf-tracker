@@ -33,6 +33,8 @@
     "seed:household": "tsx --env-file=.env scripts/dev/seed-household.ts",
     "start": "node server.js",
     "test": "vitest run --passWithNoTests",
+    "test:unit": "vitest run --project unit --passWithNoTests",
+    "test:integration": "vitest run --project integration --passWithNoTests",
     "test:ui": "vitest --ui",
     "test:watch": "vitest",
     "turf": "tsx --env-file=.env src/cli/index.ts",

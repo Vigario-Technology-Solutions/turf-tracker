@@ -1,8 +1,8 @@
 import { Section, Text, Button } from "@react-email/components";
-import { APP_NAME } from "@/lib/runtime-config";
 import { EmailLayout, EmailFooter, colors } from "./components/layout";
 
 interface PasswordResetEmailProps {
+  appName: string;
   greetingName: string;
   resetUrl: string;
 }
@@ -19,11 +19,11 @@ interface PasswordResetEmailProps {
  * and adjacent rules look askance at emails that quote the recipient
  * address back at them).
  */
-export function PasswordResetEmail({ greetingName, resetUrl }: PasswordResetEmailProps) {
+export function PasswordResetEmail({ appName, greetingName, resetUrl }: PasswordResetEmailProps) {
   const dashboardUrl = new URL(resetUrl).origin;
 
   return (
-    <EmailLayout preview={`Reset your ${APP_NAME} password`}>
+    <EmailLayout preview={`Reset your ${appName} password`}>
       <Section style={header}>
         <Text style={headerTitle}>Password Reset</Text>
       </Section>
@@ -31,7 +31,7 @@ export function PasswordResetEmail({ greetingName, resetUrl }: PasswordResetEmai
       <Section style={body}>
         <Text style={greeting}>Hi {greetingName},</Text>
         <Text style={paragraph}>
-          Someone requested a password reset for your {APP_NAME} account. If that was you, click the
+          Someone requested a password reset for your {appName} account. If that was you, click the
           button below to set a new password. If it wasn&apos;t, you can ignore this email — nothing
           will change.
         </Text>
@@ -48,7 +48,7 @@ export function PasswordResetEmail({ greetingName, resetUrl }: PasswordResetEmai
         </Text>
       </Section>
 
-      <EmailFooter dashboardUrl={dashboardUrl} />
+      <EmailFooter appName={appName} dashboardUrl={dashboardUrl} />
     </EmailLayout>
   );
 }

@@ -18,4 +18,4 @@ npx lint-staged
 [ -n "$STAGED" ] && echo "$STAGED" | xargs git add --
 
 node --run typecheck
-node --run test
+node --run test:unit

@@ -1,7 +1,7 @@
 import nodemailer from "nodemailer";
 import { render } from "@react-email/components";
 import * as Sentry from "@sentry/nextjs";
-import { APP_NAME } from "@/lib/runtime-config";
+import { readBrand, type Brand } from "@/lib/brand";
 import { PasswordResetEmail } from "@/emails/password-reset";
 
 /**
@@ -28,14 +28,22 @@ const smtpConfig = {
   port: process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : undefined,
   user: process.env.SMTP_USER,
   pass: process.env.SMTP_PASS,
-  from: process.env.SMTP_FROM
-    ? `"${process.env.SMTP_FROM_NAME ?? APP_NAME}" <${process.env.SMTP_FROM}>`
-    : undefined,
+  fromAddr: process.env.SMTP_FROM,
+  fromNameOverride: process.env.SMTP_FROM_NAME, // empty/unset → fall through to brand.appName
   replyTo: process.env.SMTP_REPLY_TO,
 };
 
-const SMTP_CONFIGURED = Boolean(smtpConfig.host && smtpConfig.from);
+const SMTP_CONFIGURED = Boolean(smtpConfig.host && smtpConfig.fromAddr);
 const SMTP_AUTHED = Boolean(smtpConfig.user && smtpConfig.pass);
+
+// Compose the SMTP `From` header using the current brand. Per-send
+// rather than module-init so admin brand edits propagate without a
+// service restart.
+function smtpFrom(brand: Brand): string | undefined {
+  if (!smtpConfig.fromAddr) return undefined;
+  const displayName = smtpConfig.fromNameOverride || brand.appName;
+  return `"${displayName}" <${smtpConfig.fromAddr}>`;
+}
 
 /**
  * Log SMTP status at server start. Called from instrumentation.ts.
@@ -72,6 +80,7 @@ interface SendOptions {
   subject: string;
   text: string;
   html?: string;
+  from: string | undefined;
 }
 
 async function sendEmail(options: SendOptions): Promise<void> {
@@ -99,7 +108,7 @@ async function sendEmail(options: SendOptions): Promise<void> {
   // reset didn't reach the user.
   try {
     const info = await transporter.sendMail({
-      from: smtpConfig.from,
+      from: options.from,
       replyTo: smtpConfig.replyTo,
       to: options.to,
       subject: options.subject,
@@ -131,8 +140,11 @@ export async function sendPasswordResetEmail(args: {
   greetingName: string;
   resetUrl: string;
 }): Promise<void> {
+  const brand = await readBrand();
+
   const html = await render(
     PasswordResetEmail({
+      appName: brand.appName,
       greetingName: args.greetingName,
       resetUrl: args.resetUrl,
     }),
@@ -141,7 +153,7 @@ export async function sendPasswordResetEmail(args: {
   const text = [
     `Hi ${args.greetingName},`,
     "",
-    `Someone requested a password reset for your ${APP_NAME} account. If that was you, click the link below to set a new password. If it wasn't, you can ignore this email — nothing will change.`,
+    `Someone requested a password reset for your ${brand.appName} account. If that was you, click the link below to set a new password. If it wasn't, you can ignore this email — nothing will change.`,
     "",
     `Reset your password: ${args.resetUrl}`,
     "",
@@ -150,8 +162,9 @@ export async function sendPasswordResetEmail(args: {
 
   await sendEmail({
     to: args.to,
-    subject: `Reset your ${APP_NAME} password`,
+    subject: `Reset your ${brand.appName} password`,
     text,
     html,
+    from: smtpFrom(brand),
   });
 }

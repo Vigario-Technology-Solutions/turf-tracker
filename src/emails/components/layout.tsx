@@ -1,11 +1,10 @@
 import { Body, Container, Head, Html, Preview, Section, Link, Font } from "@react-email/components";
 import * as React from "react";
-import { APP_NAME } from "@/lib/runtime-config";
 
 /**
  * Shared layout chrome for every outbound email. Operator brand
- * (`APP_NAME`) renders in the footer link; templates render brand
- * text in their bodies via `APP_NAME` directly. Color palette is
+ * (`appName`) is threaded as a prop into `EmailFooter`; template
+ * bodies also take `appName` as a prop. Color palette is
  * WCAG-AA-compliant pairs — keep `primary` and `gray` legible
  * against `white` and `grayLight`.
  *
@@ -44,14 +43,15 @@ export function EmailLayout({ preview, children }: EmailLayoutProps) {
 }
 
 interface EmailFooterProps {
+  appName: string;
   dashboardUrl: string;
 }
 
-export function EmailFooter({ dashboardUrl }: EmailFooterProps) {
+export function EmailFooter({ appName, dashboardUrl }: EmailFooterProps) {
   return (
     <Section style={footer}>
       <Link href={dashboardUrl} style={footerLink}>
-        {APP_NAME}
+        {appName}
       </Link>
     </Section>
   );

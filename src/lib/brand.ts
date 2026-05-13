@@ -105,5 +105,8 @@ export async function setBrand(data: {
  * the change via the 60s revalidate window.
  */
 export function invalidateBrandCache(): void {
-  revalidateTag("brand");
+  // Next 16 dropped the single-arg signature; profile arg is now
+  // required. `{ expire: 0 }` is the codebase's pattern for
+  // immediate invalidation (no grace window).
+  revalidateTag("brand", { expire: 0 });
 }

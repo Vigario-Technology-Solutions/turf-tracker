@@ -18,7 +18,7 @@
 
 import { test as vitestTest, expect } from "vitest";
 import prisma from "@/lib/db";
-import { test } from "./helpers/db";
+import { test } from "../helpers/db";
 
 vitestTest("rig boots: lookup tables are seeded", async () => {
   const areaTypeCount = await prisma.areaType.count();

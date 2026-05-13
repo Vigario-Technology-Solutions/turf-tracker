@@ -20,7 +20,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const REPO_ROOT = join(import.meta.dirname, "..");
+const REPO_ROOT = join(import.meta.dirname, "..", "..");
 const requiredEnv = JSON.parse(
   readFileSync(join(REPO_ROOT, "src/lib/required-env.json"), "utf8"),
 ) as unknown;
