@@ -1,4 +1,16 @@
 # Changelog
+## [0.7.0](https://github.com/Vigario-Technology-Solutions/turf-tracker/compare/v0.6.0...v0.7.0) (2026-05-14)
+
+### Features
+
+* **branding:** DB-driven branding via typed Settings singleton
+* **parity:** Port pipetree's recent packaging + CLI patterns
+* **parity:** Port more pipetree v2.85-track patterns
+
+### Bug Fixes
+
+* **ci:** Mint App installation token + race-fix tag step + cache@v5
+
 ## [0.6.0](https://github.com/Vigario-Technology-Solutions/turf-tracker/compare/v0.5.2...v0.6.0) (2026-05-13)
 
 ### Features
