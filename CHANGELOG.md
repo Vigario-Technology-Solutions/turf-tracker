@@ -1,4 +1,10 @@
 # Changelog
+## [0.7.1](https://github.com/Vigario-Technology-Solutions/turf-tracker/compare/v0.7.0...v0.7.1) (2026-05-14)
+
+### Bug Fixes
+
+* **config:** Lazy-throw on missing DATABASE_URL + split brand setter into settings.ts 
+
 ## [0.7.0](https://github.com/Vigario-Technology-Solutions/turf-tracker/compare/v0.6.0...v0.7.0) (2026-05-14)
 
 ### Features
