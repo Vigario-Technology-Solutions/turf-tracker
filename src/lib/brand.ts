@@ -25,7 +25,7 @@
 
 import { revalidateTag, unstable_cache } from "next/cache";
 import { connection } from "next/server";
-import prisma from "@/lib/db";
+import { getSettings } from "@/lib/settings";
 
 export interface Brand {
   appName: string;
@@ -51,7 +51,7 @@ const FALLBACK_LOGO_SRC = "/branding/icon.svg";
 // land within 60s without requiring a service restart).
 const _readBrand = unstable_cache(
   async (): Promise<Brand> => {
-    const row = await prisma.settings.findUniqueOrThrow({ where: { id: 1 } });
+    const row = await getSettings();
     return {
       appName: row.appName,
       appShortName: row.appShortName ?? row.appName,
@@ -83,20 +83,13 @@ export async function readBrand(): Promise<Brand> {
   return _readBrand();
 }
 
-/**
- * Update brand fields. DB-only write — admin UI server actions
- * additionally call invalidateBrandCache() for immediate cache
- * invalidation; CLI writes (`turf brand:set`) rely on the 60s
- * revalidate window.
- */
-export async function setBrand(data: {
-  appName?: string;
-  appShortName?: string | null;
-  appOwner?: string | null;
-  logoFile?: string | null;
-}): Promise<void> {
-  await prisma.settings.update({ where: { id: 1 }, data });
-}
+// setBrand lives in @/lib/settings — a Next-free module — so CLI
+// commands that write brand fields don't drag next/cache and
+// next/server through the import graph into the CLI bundle. Next-
+// side server actions import it from there too; the brand-cache
+// invalidation step (Next-only primitive) stays here as
+// invalidateBrandCache().
+export { setBrand } from "@/lib/settings";
 
 /**
  * Invalidate the brand cache. Call after `setBrand()` from inside a

@@ -1,6 +1,9 @@
 import type { Command } from "commander";
 import prisma from "@/lib/db";
-import { setBrand } from "@/lib/brand";
+// Import setBrand from the Next-free settings module. Going through
+// @/lib/brand would also work (it re-exports setBrand) but would
+// drag next/cache + next/server into the CLI bundle's import graph.
+import { setBrand } from "@/lib/settings";
 
 /**
  * `turf brand:set` — operator-side brand text updates.
