@@ -110,7 +110,7 @@ jobs:
         run: |
           HASH=$(jq -S '{dependencies,devDependencies,optionalDependencies,peerDependencies}' package.json | sha256sum | cut -c1-16)
           echo "key=npm-${{ runner.os }}-node${{ env.NODE_VERSION }}-${HASH}" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: ~/.npm
           key: ${{ steps.cache-key.outputs.key }}
@@ -170,14 +170,30 @@ jobs:
       !startsWith(github.event.head_commit.message, 'chore(release):')
     runs-on: [self-hosted, fedora-43]
     timeout-minutes: 30
-    permissions:
-      contents: write
+    # No `permissions:` block here — the App installation token minted
+    # below carries its own scoped permissions (Contents:write +
+    # Workflows:write per the App registration). The implicit
+    # secrets.GITHUB_TOKEN is unused; leaving permissions unset lets
+    # workflow-level read-only stay in effect for it.
 
     steps:
+      # Mint a short-lived installation token from the
+      # turf-tracker-release-bot GitHub App. Token lifetime is ~1 hour,
+      # scope is exactly what the App was granted on this repo.
+      # Replaces secrets.GITHUB_TOKEN — the App is the bypass actor on
+      # main's ruleset, so its pushes land where the workflow's default
+      # token would be rejected.
+      - name: Mint App installation token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
 
       - uses: actions/setup-node@v6
         with:
@@ -198,8 +214,12 @@ jobs:
 
       - name: Configure git
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          # Sign commits as the App's bot user. The user_id portion of
+          # the noreply email is the App's bot user id (resolvable via
+          # `gh api /users/turf-tracker-release-bot[bot]`); set as a
+          # step output by actions/create-github-app-token@v1.
+          git config --global user.name "${{ steps.app-token.outputs.app-slug }}[bot]"
+          git config --global user.email "${{ steps.app-token.outputs.installation-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com"
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Determine next version
@@ -389,6 +409,23 @@ jobs:
         # failure window that would otherwise replace the bigger
         # pre-publish-tag bug.
         run: |
+          # Race-safe: rebase any concurrent commits that landed on
+          # origin/main during rpmbuild before pushing. Without this,
+          # a human commit arriving while the release job runs causes
+          # the final push to be rejected as non-fast-forward.
+          # --autostash handles any uncommitted residue from earlier
+          # steps (npm version + git-cliff write to package.json /
+          # CHANGELOG; those are committed by "Commit chore(release)
+          # locally" before we get here, but autostash defends against
+          # any drift from future step additions). Rebase preserves
+          # the bot's chore(release) commit on top of new arrivals.
+          #
+          # If the concurrent commit modified package.json or
+          # CHANGELOG.md, the rebase conflicts and this step fails.
+          # Recovery: RPM is durable in the dnf repo; operator
+          # investigates the conflict and manually pushes the
+          # chore(release) commit + tag.
+          git pull --rebase --autostash origin main
           git tag -a ${{ steps.version.outputs.tag }} -m "Release ${{ steps.version.outputs.tag }}"
           git push origin main --atomic --follow-tags
 
@@ -396,7 +433,7 @@ jobs:
       - name: Create GitHub Release with RPM asset
         if: steps.version.outputs.skip != 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           gh release create "${{ steps.version.outputs.tag }}" \
             "${{ steps.rpm.outputs.path }}" \
