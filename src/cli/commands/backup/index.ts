@@ -12,6 +12,7 @@ import {
   pgDumpAvailable,
   pgVersions,
 } from "../../shared/postgres-tools";
+import { tarAvailable } from "../../shared/tar";
 
 /**
  * `turf backup` — opinionated single-tarball backup.
@@ -103,6 +104,9 @@ export async function runBackup(opts: BackupOpts): Promise<string> {
       throw new Error(
         "pg_dump not found. Install the postgresql client tools: sudo dnf install postgresql",
       );
+    }
+    if (!(await tarAvailable())) {
+      throw new Error("tar not found. Install: sudo dnf install tar");
     }
     const versions = await pgVersions();
     const versionCheck = checkClientNewerOrEqual(versions);

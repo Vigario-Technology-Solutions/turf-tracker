@@ -56,6 +56,10 @@ RestrictSUIDSGID=true
 RestrictNamespaces=true
 RestrictRealtime=true
 LockPersonality=true
+# Hide other-user processes from /proc — same posture as the main
+# service. ProcSubset=pid skipped for parity (libuv / Prisma engine
+# read /proc/cpuinfo + /proc/meminfo).
+ProtectProc=invisible
 # AF_UNIX for local Postgres socket (peer auth) + Prisma engine
 # IPC. AF_NETLINK for NSS / DNS-config path lookups. AF_INET +
 # AF_INET6 for remote Postgres.

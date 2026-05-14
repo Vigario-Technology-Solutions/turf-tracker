@@ -13,6 +13,7 @@ import {
   pgRestore,
   pgVersions,
 } from "../../shared/postgres-tools";
+import { tarAvailable } from "../../shared/tar";
 import { systemctlIsActive, systemctlRun } from "../../shared/systemctl";
 import type { BackupManifest } from "../backup";
 
@@ -137,6 +138,9 @@ async function runRestore(backupPath: string, opts: RestoreOpts): Promise<void> 
       throw new Error(
         "pg_restore not found (ships with pg_dump). Install: sudo dnf install postgresql",
       );
+    }
+    if (!(await tarAvailable())) {
+      throw new Error("tar not found. Install: sudo dnf install tar");
     }
     const versions = await pgVersions();
     const versionCheck = checkClientNewerOrEqual(versions);

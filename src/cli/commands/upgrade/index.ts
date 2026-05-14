@@ -17,18 +17,8 @@ import { systemctlRun } from "../../shared/systemctl";
  *     and every subsequent `dnf upgrade` triggers
  *     `turf-tracker-upgrade.service`, which invokes this command.
  *
- * Either mode runs the same four steps:
+ * Either mode runs the same three steps:
  *
- *   0. `systemctl daemon-reload` — refresh systemd's view of unit
- *      files. Closes a race against the upgrade.path inotify trigger:
- *      RPM writes /usr/share/turf-tracker/package.json mid-
- *      transaction, the Path unit's PathChanged fires immediately and
- *      starts upgrade.service, but %posttrans (which would otherwise
- *      run daemon-reload) hasn't executed yet. Without this step the
- *      auto-orchestrated run would drive whatever migrate/seed/main
- *      unit-file definitions systemd had cached pre-upgrade — wrong
- *      on any release that changes hardening, env, or ExecStart.
- *      Idempotent and cheap, so it runs in the manual path too.
  *   1. `systemctl start turf-tracker-migrate.service` — applies any
  *      pending Prisma migrations. Type=oneshot, so the start blocks
  *      until ExecStart completes.
@@ -42,6 +32,13 @@ import { systemctlRun } from "../../shared/systemctl";
  *
  * `--no-restart` skips step 3 — useful when an operator wants to apply
  * the schema/seed in a maintenance window without bouncing the service.
+ *
+ * `systemctl daemon-reload` is NOT a step here. The auto-orchestrated
+ * race against %posttrans is closed by an `ExecStartPre=` on
+ * turf-tracker-upgrade.service; the manual path runs after dnf's
+ * transaction completes (which already daemon-reloaded via the spec's
+ * %systemd_post macros). Keeping the reload out of the app keeps the
+ * unit graph authoritative.
  */
 
 interface UpgradeOpts {
@@ -74,7 +71,6 @@ async function run(opts: UpgradeOpts): Promise<void> {
     await runBackup({});
     process.stderr.write(`\n`);
   }
-  await systemctlRun("daemon-reload");
   await systemctlRun("start", "turf-tracker-migrate.service");
   await systemctlRun("start", "turf-tracker-seed.service");
   if (opts.restart !== false) {

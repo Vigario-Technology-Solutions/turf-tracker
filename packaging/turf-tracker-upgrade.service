@@ -7,6 +7,21 @@ Type=oneshot
 # Run as root because the unit invokes systemctl to drive the
 # migrate, seed, and try-restart units in turn. Each of those runs as
 # the turf-tracker service user via its own User= directive.
+#
+# ExecStartPre=systemctl daemon-reload closes a race against the
+# upgrade.path inotify trigger: dnf writes the new
+# /usr/share/turf-tracker/package.json mid-transaction, the Path
+# unit's PathChanged fires immediately and starts this service, but
+# %posttrans (which the spec uses to daemon-reload) hasn't executed
+# yet. Without this pre-step the auto-orchestrated run would drive
+# whatever migrate/seed/main unit-file definitions systemd had cached
+# pre-upgrade — wrong on any release that changes hardening, env, or
+# ExecStart. Lives in the unit graph rather than in the app: the
+# canonical fix is ordering, not in-app belt-and-suspenders. Manual
+# `sudo turf upgrade` from the CLI bypasses this service and relies
+# on %posttrans's daemon-reload having already happened during the
+# dnf transaction.
+ExecStartPre=/usr/bin/systemctl daemon-reload
 ExecStart=/usr/bin/turf upgrade
 # No Restart= directive on purpose. If `turf upgrade` fails — most
 # commonly because a migration errored or the new code's schema isn't
@@ -16,6 +31,45 @@ ExecStart=/usr/bin/turf upgrade
 # manually re-runs `sudo turf upgrade` or `sudo systemctl start
 # turf-tracker-upgrade.service`.
 TimeoutStartSec=infinity
+
+# Hardening. The unit runs as root because it shells out to
+# systemctl, but the only work it does is daemon-reload + invoking
+# `turf upgrade` (which is itself a thin wrapper around three more
+# systemctl start calls). It never writes to the filesystem, never
+# needs CAP_SYS_*, never needs raw network. The narrow posture
+# matches that surface and rejects accidental capability escalation
+# if the CLI binary is ever replaced or compromised.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+RemoveIPC=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+# systemctl talks to PID 1 over its private socket (/run/systemd/private)
+# and to the system bus — both AF_UNIX. NSS/udev lookups don't fire on
+# the paths this unit exercises (daemon-reload + start + try-restart on
+# units we own), so AF_NETLINK is unnecessary.
+RestrictAddressFamilies=AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+# All capabilities dropped. systemctl driving units we own
+# (daemon-reload, start, try-restart) goes through PID 1 over the
+# private socket — PID 1 enforces auth, the caller doesn't need
+# CAP_KILL. The migrate/seed/main units run as the turf-tracker
+# service user via their own User= directives.
+CapabilityBoundingSet=
+AmbientCapabilities=
 
 # No [Install] section. This unit is triggered by
 # turf-tracker-upgrade.path (when the operator opts into auto-

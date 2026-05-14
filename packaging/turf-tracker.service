@@ -72,6 +72,14 @@ RestrictSUIDSGID=true
 RestrictNamespaces=true
 RestrictRealtime=true
 LockPersonality=true
+# Hide other-user processes from /proc. The service runs as
+# 'turf-tracker' and never needs to enumerate root-owned or sshd-
+# owned PIDs. ProcSubset=pid is deliberately NOT set: libuv reads
+# /proc/cpuinfo on Linux for os.cpus()/uv_resident_set_memory(),
+# and Prisma's engine binary probes /proc/meminfo for buffer sizing
+# — both would silently return empty/wrong values with
+# ProcSubset=pid.
+ProtectProc=invisible
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
 
 # Syscall filtering — @chown allowed because libuv's copyfile uses fchown.
