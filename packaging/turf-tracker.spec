@@ -14,6 +14,19 @@
 %global         webuser   turf-tracker
 %global         webgroup  turf-tracker
 
+# All units the spec's %%systemd_post / _preun / _postun trio
+# operates on. MUST be a single physical line — rpm's %%{?*} expansion
+# in systemd-rpm-macros only consumes first-line args. Splitting the
+# arg list across backslash-continued lines silently passes only the
+# first unit to the macro and leaves the continuation lines outside
+# the macro's `if [...]; then ... fi` body where bash tries to execute
+# the unit names as commands. The pipetree v2.85.1 → v2.85.2 chain
+# paid for that discovery (exit 127 in %%preun on every upgrade
+# transaction → %%posttrans never reaches the auto-orchestrated
+# upgrade.path). Routing through a %%global today keeps adding a
+# timer to a one-line edit instead of a three-site spec restructure.
+%global         turf_tracker_units %{name}.service
+
 # Disable brp-mangle-shebangs. node_modules ships scripts with various
 # shebangs (#!/usr/bin/env node, etc.) that are not our concern to police.
 %global         __brp_mangle_shebangs %{nil}
@@ -305,11 +318,11 @@ systemd-tmpfiles --create %{_tmpfilesdir}/%{name}.conf || :
 # etc_t) already permit those accesses. Custom httpd_sys_*_t rules
 # would imply Apache reads the file tree directly — it doesn't.
 
-%systemd_post %{name}.service
+%systemd_post %{turf_tracker_units}
 
 
 %preun
-%systemd_preun %{name}.service
+%systemd_preun %{turf_tracker_units}
 
 
 %postun
@@ -319,7 +332,7 @@ systemd-tmpfiles --create %{_tmpfilesdir}/%{name}.conf || :
 # auto-triggered by %%{name}-upgrade.path when the operator has
 # enabled that opt-in. Restart-via-rpm-macro would bypass the
 # migrate/seed ordering the upgrade command guarantees.
-%systemd_postun %{name}.service
+%systemd_postun %{turf_tracker_units}
 
 
 %posttrans
